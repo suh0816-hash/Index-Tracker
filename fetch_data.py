@@ -19,7 +19,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")
-KEEP = 90  # 보관할 최근 관측치 수
+KEEP_DAYS = 450  # 보관 기간(일): 8개월 표시 + 120일 이동평균 계산용
 UA = {"User-Agent": "Mozilla/5.0 (stock-dashboard)"}
 TIMEOUT = 30
 
@@ -48,7 +48,7 @@ def http_get(url):
 def fetch_yahoo(symbol):
     url = ("https://query1.finance.yahoo.com/v8/finance/chart/"
            + urllib.parse.quote(symbol, safe="")
-           + "?range=6mo&interval=1d")
+           + "?range=2y&interval=1d")
     res = json.loads(http_get(url))["chart"]["result"][0]
     off = res["meta"].get("gmtoffset", 0)
     closes = res["indicators"]["quote"][0]["close"]
@@ -62,7 +62,7 @@ def fetch_yahoo(symbol):
 
 
 def fetch_fred(series_id):
-    start = (datetime.now(timezone.utc) - timedelta(days=200)).date().isoformat()
+    start = (datetime.now(timezone.utc) - timedelta(days=KEEP_DAYS + 20)).date().isoformat()
     url = ("https://fred.stlouisfed.org/graph/fredgraph.csv?id=%s&cosd=%s"
            % (series_id, start))
     rows = list(csv.reader(io.StringIO(http_get(url))))
@@ -98,7 +98,7 @@ def fetch_ecos(item_name, _cache={}):
     if code is None:
         raise RuntimeError("ECOS 항목 코드를 찾지 못함: " + item_name)
     today = datetime.now(timezone.utc).date()
-    s = (today - timedelta(days=200)).strftime("%Y%m%d")
+    s = (today - timedelta(days=KEEP_DAYS + 20)).strftime("%Y%m%d")
     e = today.strftime("%Y%m%d")
     res = _ecos("StatisticSearch/%s/json/kr/1/500/%s/D/%s/%s/%s"
                 % (key, stat, s, e, code))
@@ -117,7 +117,9 @@ SOURCE_LABEL = {"yahoo": "Yahoo Finance", "fred": "FRED", "ecos": "한국은행 
 
 
 def summarize(pts, kind):
-    pts = pts[-KEEP:]
+    last_d = datetime.strptime(pts[-1][0], "%Y-%m-%d")
+    cutoff = (last_d - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
+    pts = [p for p in pts if p[0] >= cutoff]
     last, prev = pts[-1], pts[-2] if len(pts) > 1 else None
     out = {"points": pts, "last": last[1], "as_of": last[0]}
     if prev:

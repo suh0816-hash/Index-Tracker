@@ -11,10 +11,12 @@
     --up: #d92d20;   /* 상승: 빨강 (한국식) */
     --down: #1d6fe0; /* 하락: 파랑 */
     --flat: #6b7280; --warn: #b45309;
+    --ma20: #d97706; --ma60: #059669; --ma120: #7c3aed;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #0f1115; --card: #181b21; --fg: #eef0f3; --muted: #9aa1ad;
-            --line: #272b33; --up: #ff6b5e; --down: #5aa2ff; --flat: #9aa1ad; --warn: #f5a524; }
+            --line: #272b33; --up: #ff6b5e; --down: #5aa2ff; --flat: #9aa1ad; --warn: #f5a524;
+            --ma20: #fbbf24; --ma60: #34d399; --ma120: #a78bfa; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg);
@@ -26,8 +28,10 @@
   #updated { font-size: 12px; color: var(--muted); }
   h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 18px 4px 8px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; min-width: 0; }
-  .name { font-size: 12px; color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px;
+          min-width: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .card:active { opacity: .7; }
+  .name { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; }
   .val { font-size: 21px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
   .val small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 2px; }
   .chg { font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums; }
@@ -38,20 +42,69 @@
   #banner { display: none; background: var(--card); border: 1px solid var(--warn); color: var(--warn);
             border-radius: 12px; padding: 10px 12px; font-size: 13px; margin-bottom: 10px; }
   footer { font-size: 11px; color: var(--muted); margin: 20px 4px 0; line-height: 1.5; }
+
+  /* 상세 화면 */
+  #detail-view { display: none; }
+  .back { display: inline-block; padding: 8px 4px; font-size: 14px; color: var(--down); text-decoration: none; }
+  .d-head { margin: 2px 4px 10px; }
+  .d-title { font-size: 15px; color: var(--muted); }
+  .d-val { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .d-val small { font-size: 14px; color: var(--muted); font-weight: 500; margin-left: 3px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 10px; }
+  #readout { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; font-variant-numeric: tabular-nums; }
+  #readout .date { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+  .ro { min-width: 0; }
+  .ro .k { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .ro .k i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; }
+  .ro .v { font-size: 13px; font-weight: 600; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; }
+  #chart { width: 100%; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+  #chart svg { display: block; touch-action: pan-y; }
+  .axis { fill: var(--muted); font-size: 10px; }
+  .gridline { stroke: var(--line); stroke-width: 1; }
+  .l-price { stroke: var(--fg); stroke-width: 1.8; fill: none; stroke-linejoin: round; }
+  .l-ma20 { stroke: var(--ma20); } .l-ma60 { stroke: var(--ma60); } .l-ma120 { stroke: var(--ma120); }
+  .l-ma { stroke-width: 1.4; fill: none; stroke-linejoin: round; }
+  .cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+  .dot { fill: var(--fg); }
+  #stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 10px; }
+  .st .k { font-size: 11px; color: var(--muted); }
+  .st .v { font-size: 14px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .st.wide { grid-column: 1 / -1; }
+  .note { font-size: 11px; color: var(--muted); line-height: 1.5; margin: 6px 4px 0; }
 </style>
 </head>
 <body>
-<header><h1>지표 추적자</h1><span id="updated">불러오는 중…</span></header>
-<div id="banner"></div>
-<main id="root"></main>
-<footer>등락은 직전 관측일 대비. 주가·환율·원유는 %, 금리는 bp. 각 카드의 날짜는 해당 값의 기준일이며
-시장별 휴장일이 달라 서로 다를 수 있습니다. 출처: Yahoo Finance, FRED, 한국은행 ECOS.</footer>
+
+<div id="list-view">
+  <header><h1>지표 추적자</h1><span id="updated">불러오는 중…</span></header>
+  <div id="banner"></div>
+  <main id="root"></main>
+  <footer>지표를 누르면 8개월 차트와 이동평균선을 볼 수 있습니다. 등락은 직전 관측일 대비이며 주가·환율·원유는 %,
+  금리는 bp입니다. 카드의 날짜는 해당 값의 기준일로, 시장별 휴장일이 달라 서로 다를 수 있습니다.
+  출처: Yahoo Finance, FRED, 한국은행 ECOS.</footer>
+</div>
+
+<div id="detail-view">
+  <a class="back" href="#">← 목록</a>
+  <div class="d-head">
+    <div class="d-title" id="d-title"></div>
+    <div class="d-val" id="d-val"></div>
+    <div class="chg" id="d-chg"></div>
+  </div>
+  <div class="panel" id="readout"></div>
+  <div class="panel"><div id="chart"></div></div>
+  <div class="panel" id="stats"></div>
+  <div class="note" id="d-note"></div>
+</div>
 
 <script>
 (function () {
-  var root = document.getElementById('root');
   var NS = 'http://www.w3.org/2000/svg';
+  var MONTHS = 8;            // 상세 차트 표시 기간(개월)
+  var MA_N = [20, 60, 120];  // 이동평균 기간(거래일)
+  var DATA = null, BY_ID = {}, listScroll = 0, current = null;
 
+  /* ---------- 공통 ---------- */
   function fmt(n, d) {
     return Number(n).toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d });
   }
@@ -61,32 +114,46 @@
     if (text != null) e.textContent = text;
     return e;
   }
+  function svgEl(tag, attrs) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+  function dirOf(x) { return x > 0 ? 'up' : x < 0 ? 'down' : 'flat'; }
+  function arrow(x) { return x > 0 ? '▲' : x < 0 ? '▼' : '–'; }
+  function signed(x, d) { return (x > 0 ? '+' : x < 0 ? '−' : '') + fmt(Math.abs(x), d); }
+  function tms(dateStr) { var p = dateStr.split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]); }
+  function md(dateStr) { var p = dateStr.split('-'); return (+p[1]) + '/' + (+p[2]); }
+
+  /* ---------- 목록 화면 ---------- */
   function spark(points, dir) {
-    var svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('class', 'spark');
-    svg.setAttribute('viewBox', '0 0 100 36');
-    svg.setAttribute('preserveAspectRatio', 'none');
+    var svg = svgEl('svg', { viewBox: '0 0 100 36', preserveAspectRatio: 'none' });
     var vals = points.map(function (p) { return p[1]; });
-    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
-    var span = hi - lo || 1;
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), span = hi - lo || 1;
     var d = vals.map(function (v, i) {
       var x = vals.length === 1 ? 50 : (i / (vals.length - 1)) * 100;
       var y = 34 - ((v - lo) / span) * 32;
       return (i ? 'L' : 'M') + x.toFixed(2) + ' ' + y.toFixed(2);
     }).join(' ');
-    var path = document.createElementNS(NS, 'path');
-    path.setAttribute('d', d);
-    path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', 'currentColor');
-    path.setAttribute('stroke-width', '1.6');
-    path.setAttribute('vector-effect', 'non-scaling-stroke');
-    svg.appendChild(path);
+    svg.appendChild(svgEl('path', { d: d, fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6',
+                                    'vector-effect': 'non-scaling-stroke' }));
     svg.setAttribute('class', 'spark ' + dir);
     return svg;
   }
+  function changeText(s) {
+    if (s.change == null) return '—';
+    if (s.kind === 'bp') return arrow(s.change) + ' ' + fmt(Math.abs(s.change), 1) + 'bp';
+    return arrow(s.change) + ' ' + fmt(Math.abs(s.change), s.decimals) +
+           (s.change_pct != null ? ' (' + fmt(Math.abs(s.change_pct), 2) + '%)' : '');
+  }
   function card(s) {
     var c = el('div', 'card');
-    c.appendChild(el('div', 'name', s.label));
+    c.setAttribute('role', 'button');
+    c.setAttribute('tabindex', '0');
+    var nm = el('div', 'name');
+    nm.appendChild(el('span', null, s.label));
+    nm.appendChild(el('span', null, '›'));
+    c.appendChild(nm);
     if (s.last == null) {
       c.appendChild(el('div', 'val', '—'));
       c.appendChild(el('div', 'meta stale', '데이터 없음'));
@@ -95,53 +162,280 @@
     var v = el('div', 'val', fmt(s.last, s.decimals));
     if (s.unit) v.appendChild(el('small', null, s.unit));
     c.appendChild(v);
-
-    var dir = 'flat', txt = '—';
-    if (s.change != null) {
-      dir = s.change > 0 ? 'up' : s.change < 0 ? 'down' : 'flat';
-      var arrow = s.change > 0 ? '▲' : s.change < 0 ? '▼' : '–';
-      if (s.kind === 'bp') {
-        txt = arrow + ' ' + fmt(Math.abs(s.change), 1) + 'bp';
-      } else {
-        txt = arrow + ' ' + fmt(Math.abs(s.change), s.decimals) +
-              (s.change_pct != null ? ' (' + fmt(Math.abs(s.change_pct), 2) + '%)' : '');
-      }
-    }
-    c.appendChild(el('div', 'chg ' + dir, txt));
+    var dir = s.change != null ? dirOf(s.change) : 'flat';
+    c.appendChild(el('div', 'chg ' + dir, changeText(s)));
     if (s.points && s.points.length > 1) c.appendChild(spark(s.points.slice(-60), dir));
-    var m = el('div', 'meta' + (s.stale ? ' stale' : ''), s.as_of + (s.stale ? ' · 갱신 실패(이전 값)' : ''));
-    c.appendChild(m);
+    c.appendChild(el('div', 'meta' + (s.stale ? ' stale' : ''),
+                     s.as_of + (s.stale ? ' · 갱신 실패(이전 값)' : '')));
+    var open = function () { listScroll = window.scrollY || 0; location.hash = s.id; };
+    c.addEventListener('click', open);
+    c.addEventListener('keydown', function (e) { if (e.key === 'Enter') open(); });
     return c;
   }
+  function renderList() {
+    var root = document.getElementById('root');
+    root.replaceChildren();
+    var groups = [], byGroup = {};
+    DATA.series.forEach(function (s) {
+      if (!byGroup[s.group]) { byGroup[s.group] = []; groups.push(s.group); }
+      byGroup[s.group].push(s);
+    });
+    groups.forEach(function (g) {
+      root.appendChild(el('h2', null, g));
+      var grid = el('div', 'grid');
+      byGroup[g].forEach(function (s) { grid.appendChild(card(s)); });
+      root.appendChild(grid);
+    });
+    var gen = new Date(DATA.generated_at);
+    document.getElementById('updated').textContent =
+      '수집 ' + gen.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric',
+                                             hour: '2-digit', minute: '2-digit', hour12: false });
+    var problems = DATA.series.filter(function (s) { return s.error; }).map(function (s) { return s.label; });
+    var ageH = (Date.now() - gen.getTime()) / 36e5, msgs = [];
+    if (problems.length) msgs.push('수집 실패: ' + problems.join(', '));
+    if (ageH > 96) msgs.push('마지막 수집이 ' + Math.floor(ageH / 24) + '일 전입니다.');
+    var b = document.getElementById('banner');
+    if (msgs.length) { b.textContent = msgs.join(' / '); b.style.display = 'block'; }
+    else b.style.display = 'none';
+  }
+
+  /* ---------- 상세 화면 ---------- */
+  function sma(vals, n) {
+    var out = [], sum = 0;
+    for (var i = 0; i < vals.length; i++) {
+      sum += vals[i];
+      if (i >= n) sum -= vals[i - n];
+      out.push(i >= n - 1 ? sum / n : null);
+    }
+    return out;
+  }
+  function niceTicks(lo, hi, count) {
+    var raw = (hi - lo) / count, mag = Math.pow(10, Math.floor(Math.log10(raw))), norm = raw / mag;
+    var step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag, ticks = [];
+    for (var v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) ticks.push(v);
+    return { ticks: ticks, step: step };
+  }
+  // 상세용 계산: 전체 이력으로 이동평균을 구하고, 표시 구간(최근 8개월)의 시작 인덱스를 찾는다.
+  function model(s) {
+    var pts = s.points || [];
+    var closes = pts.map(function (p) { return p[1]; });
+    var ma = MA_N.map(function (n) { return sma(closes, n); });
+    var endT = tms(pts[pts.length - 1][0]);
+    var d = new Date(endT); d.setUTCMonth(d.getUTCMonth() - MONTHS);
+    var startIdx = 0;
+    while (startIdx < pts.length - 1 && tms(pts[startIdx][0]) < d.getTime()) startIdx++;
+    return { pts: pts, closes: closes, ma: ma, start: startIdx, t0: tms(pts[startIdx][0]), t1: endT };
+  }
+
+  function drawChart(s, m, onPick) {
+    var host = document.getElementById('chart');
+    host.replaceChildren();
+    var W = host.clientWidth || 340, H = 280, L = 6, R = 44, T = 8, B = 22;
+    var pw = W - L - R, ph = H - T - B;
+    var svg = svgEl('svg', { width: W, height: H, viewBox: '0 0 ' + W + ' ' + H });
+
+    var lo = Infinity, hi = -Infinity, i, k, v;
+    for (i = m.start; i < m.pts.length; i++) {
+      var cand = [m.closes[i]];
+      for (k = 0; k < m.ma.length; k++) if (m.ma[k][i] != null) cand.push(m.ma[k][i]);
+      cand.forEach(function (x) { if (x < lo) lo = x; if (x > hi) hi = x; });
+    }
+    var pad = (hi - lo || Math.abs(hi) * 0.01 || 1) * 0.06;
+    lo -= pad; hi += pad;
+    var nt = niceTicks(lo, hi, 4);
+    var tdec = nt.step >= 1 ? 0 : nt.step >= 0.1 ? 1 : nt.step >= 0.01 ? 2 : 3;
+    var span = m.t1 - m.t0 || 1;
+    function X(t) { return L + ((t - m.t0) / span) * pw; }
+    function Y(val) { return T + (1 - (val - lo) / (hi - lo)) * ph; }
+
+    nt.ticks.forEach(function (tv) {
+      var y = Y(tv);
+      svg.appendChild(svgEl('line', { x1: L, x2: L + pw, y1: y, y2: y, 'class': 'gridline' }));
+      var lab = svgEl('text', { x: W - R + 4, y: y + 3, 'class': 'axis' });
+      lab.textContent = fmt(tv, tdec);
+      svg.appendChild(lab);
+    });
+    var lastMonth = null;
+    for (i = m.start; i < m.pts.length; i++) {
+      var mo = m.pts[i][0].slice(0, 7);
+      if (mo !== lastMonth) {
+        lastMonth = mo;
+        var x = X(tms(m.pts[i][0]));
+        if (x > L + 8 && x < L + pw - 8) {
+          var xl = svgEl('text', { x: x, y: H - 6, 'text-anchor': 'middle', 'class': 'axis' });
+          xl.textContent = (+mo.slice(5)) + '월';
+          svg.appendChild(xl);
+        }
+      }
+    }
+    function pathOf(arr) {
+      var d = '', started = false;
+      for (var j = m.start; j < m.pts.length; j++) {
+        if (arr[j] == null) continue;
+        d += (started ? 'L' : 'M') + X(tms(m.pts[j][0])).toFixed(1) + ' ' + Y(arr[j]).toFixed(1);
+        started = true;
+      }
+      return d;
+    }
+    [2, 1, 0].forEach(function (idx) {
+      var d = pathOf(m.ma[idx]);
+      if (d) svg.appendChild(svgEl('path', { d: d, 'class': 'l-ma l-ma' + MA_N[idx] }));
+    });
+    svg.appendChild(svgEl('path', { d: pathOf(m.closes), 'class': 'l-price' }));
+
+    var cross = svgEl('line', { y1: T, y2: T + ph, 'class': 'cross', visibility: 'hidden' });
+    var dot = svgEl('circle', { r: 3.5, 'class': 'dot', visibility: 'hidden' });
+    svg.appendChild(cross); svg.appendChild(dot);
+
+    function pick(clientX) {
+      var rect = host.getBoundingClientRect();
+      var t = m.t0 + ((clientX - rect.left - L) / pw) * span, best = m.start, bd = Infinity;
+      for (var j = m.start; j < m.pts.length; j++) {
+        var dd = Math.abs(tms(m.pts[j][0]) - t);
+        if (dd < bd) { bd = dd; best = j; }
+      }
+      var cx = X(tms(m.pts[best][0]));
+      cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.setAttribute('visibility', 'visible');
+      dot.setAttribute('cx', cx); dot.setAttribute('cy', Y(m.closes[best])); dot.setAttribute('visibility', 'visible');
+      onPick(best);
+    }
+    function reset() {
+      cross.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden');
+      onPick(m.pts.length - 1);
+    }
+    svg.addEventListener('pointerdown', function (e) { pick(e.clientX); });
+    svg.addEventListener('pointermove', function (e) { pick(e.clientX); });
+    svg.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') reset(); });
+    host.appendChild(svg);
+  }
+
+  function buildReadout() {
+    var box = document.getElementById('readout');
+    box.replaceChildren();
+    var refs = { date: el('div', 'date') };
+    box.appendChild(refs.date);
+    [['close', '종가', 'var(--fg)'], ['ma20', '20일', 'var(--ma20)'],
+     ['ma60', '60일', 'var(--ma60)'], ['ma120', '120일', 'var(--ma120)']].forEach(function (r) {
+      var c = el('div', 'ro'), k = el('div', 'k'), sw = el('i');
+      sw.style.background = r[2];
+      k.appendChild(sw); k.appendChild(document.createTextNode(r[1]));
+      refs[r[0]] = el('div', 'v', '—');
+      c.appendChild(k); c.appendChild(refs[r[0]]);
+      box.appendChild(c);
+    });
+    return refs;
+  }
+
+  function stat(label, value, cls, wide) {
+    var c = el('div', 'st' + (wide ? ' wide' : ''));
+    c.appendChild(el('div', 'k', label));
+    c.appendChild(el('div', 'v' + (cls ? ' ' + cls : ''), value));
+    return c;
+  }
+
+  function renderStats(s, m) {
+    var box = document.getElementById('stats');
+    box.replaceChildren();
+    var last = m.pts.length - 1, bp = s.kind === 'bp', dec = s.decimals;
+    var hiI = m.start, loI = m.start, i;
+    for (i = m.start; i <= last; i++) {
+      if (m.closes[i] > m.closes[hiI]) hiI = i;
+      if (m.closes[i] < m.closes[loI]) loI = i;
+    }
+    var first = m.closes[m.start], cur = m.closes[last];
+    var u = s.unit === '%' ? '%' : '';
+    box.appendChild(stat(MONTHS + '개월 최고', fmt(m.closes[hiI], dec) + u + ' (' + md(m.pts[hiI][0]) + ')'));
+    box.appendChild(stat(MONTHS + '개월 최저', fmt(m.closes[loI], dec) + u + ' (' + md(m.pts[loI][0]) + ')'));
+    var chg = bp ? (cur - first) * 100 : (cur / first - 1) * 100;
+    box.appendChild(stat(MONTHS + '개월 등락 (' + md(m.pts[m.start][0]) + '~)',
+                         signed(chg, bp ? 1 : 2) + (bp ? 'bp' : '%'), dirOf(chg)));
+    if (!bp) {
+      var dd = (cur / m.closes[hiI] - 1) * 100;
+      box.appendChild(stat('고점 대비', signed(dd, 2) + '%', dirOf(dd)));
+    } else {
+      box.appendChild(stat('고점 대비', signed((cur - m.closes[hiI]) * 100, 1) + 'bp', dirOf(cur - m.closes[hiI])));
+    }
+    var parts = [], ok = true;
+    MA_N.forEach(function (n, idx) {
+      var mv = m.ma[idx][last];
+      if (mv == null) { ok = false; parts.push(n + '일선 —'); return; }
+      var g = bp ? (cur - mv) * 100 : (cur / mv - 1) * 100;
+      parts.push(n + '일선 ' + signed(g, bp ? 1 : 2) + (bp ? 'bp' : '%'));
+    });
+    box.appendChild(stat('이동평균선 대비 현재가', parts.join(' · '), null, true));
+    var arr = '—';
+    if (ok) {
+      var a = m.ma[0][last], b = m.ma[1][last], c = m.ma[2][last];
+      arr = (a > b && b > c) ? '정배열 (20 > 60 > 120)' : (a < b && b < c) ? '역배열 (20 < 60 < 120)' : '혼조';
+    }
+    box.appendChild(stat('이동평균 배열', arr, null, true));
+  }
+
+  function renderDetail(s) {
+    document.getElementById('d-title').textContent = s.label;
+    var dv = document.getElementById('d-val');
+    dv.textContent = s.last != null ? fmt(s.last, s.decimals) : '—';
+    if (s.unit && s.last != null) dv.appendChild(el('small', null, s.unit));
+    var dc = document.getElementById('d-chg');
+    dc.className = 'chg ' + (s.change != null ? dirOf(s.change) : 'flat');
+    dc.textContent = changeText(s) + (s.as_of ? '  ·  ' + s.as_of : '');
+    var note = document.getElementById('d-note');
+    var chartHost = document.getElementById('chart'), stats = document.getElementById('stats');
+    if (!s.points || s.points.length < 2) {
+      document.getElementById('readout').replaceChildren();
+      chartHost.replaceChildren(); stats.replaceChildren();
+      note.textContent = '이 지표는 아직 차트를 그릴 데이터가 없습니다.' + (s.error ? ' (' + s.error + ')' : '');
+      return;
+    }
+    var m = model(s), refs = buildReadout();
+    var u = s.unit === '%' ? '%' : '';
+    function setReadout(i) {
+      refs.date.textContent = m.pts[i][0];
+      refs.close.textContent = fmt(m.closes[i], s.decimals) + u;
+      MA_N.forEach(function (n, idx) {
+        var mv = m.ma[idx][i];
+        refs['ma' + n].textContent = mv == null ? '—' : fmt(mv, s.decimals) + u;
+      });
+    }
+    function draw() { drawChart(s, m, setReadout); setReadout(m.pts.length - 1); }
+    current = { draw: draw };
+    draw();
+    renderStats(s, m);
+    var histDays = Math.round((m.t1 - tms(m.pts[0][0])) / 864e5);
+    note.textContent = '이동평균은 일별 종가의 단순이동평균(거래일 기준)이며 현재 보관 중인 약 ' + histDays +
+      '일 데이터로 계산합니다. 차트를 누르거나 좌우로 끌면 날짜별 값을 볼 수 있습니다. 출처: ' + s.source +
+      (s.stale ? ' · 최근 갱신 실패로 이전 값 표시 중' : '') + '.';
+  }
+
+  /* ---------- 라우팅 ---------- */
+  function route() {
+    if (!DATA) return;
+    var id = decodeURIComponent(location.hash.replace(/^#/, ''));
+    var list = document.getElementById('list-view'), det = document.getElementById('detail-view');
+    if (id && BY_ID[id]) {
+      list.style.display = 'none'; det.style.display = 'block';
+      renderDetail(BY_ID[id]);
+      window.scrollTo(0, 0);
+    } else {
+      current = null;
+      det.style.display = 'none'; list.style.display = 'block';
+      renderList();
+      window.scrollTo(0, listScroll);
+    }
+  }
+  window.addEventListener('hashchange', route);
+  var rt;
+  window.addEventListener('resize', function () {
+    clearTimeout(rt);
+    rt = setTimeout(function () { if (current) current.draw(); }, 150);
+  });
 
   fetch('data.json?t=' + Date.now(), { cache: 'no-store' })
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function (data) {
-      var groups = [], byGroup = {};
-      data.series.forEach(function (s) {
-        if (!byGroup[s.group]) { byGroup[s.group] = []; groups.push(s.group); }
-        byGroup[s.group].push(s);
-      });
-      groups.forEach(function (g) {
-        root.appendChild(el('h2', null, g));
-        var grid = el('div', 'grid');
-        byGroup[g].forEach(function (s) { grid.appendChild(card(s)); });
-        root.appendChild(grid);
-      });
-      var gen = new Date(data.generated_at);
-      document.getElementById('updated').textContent =
-        '수집 ' + gen.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric',
-                                               hour: '2-digit', minute: '2-digit', hour12: false });
-      var problems = data.series.filter(function (s) { return s.error; }).map(function (s) { return s.label; });
-      var ageH = (Date.now() - gen.getTime()) / 36e5;
-      var msgs = [];
-      if (problems.length) msgs.push('수집 실패: ' + problems.join(', '));
-      if (ageH > 96) msgs.push('마지막 수집이 ' + Math.floor(ageH / 24) + '일 전입니다.');
-      if (msgs.length) {
-        var b = document.getElementById('banner');
-        b.textContent = msgs.join(' / ');
-        b.style.display = 'block';
-      }
+      DATA = data;
+      data.series.forEach(function (s) { BY_ID[s.id] = s; });
+      route();
     })
     .catch(function () {
       document.getElementById('updated').textContent = '불러오기 실패';
