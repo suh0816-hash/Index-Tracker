@@ -71,6 +71,28 @@
   .st .k { font-size: 11px; color: var(--muted); }
   .st .v { font-size: 14px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
   .st.wide { grid-column: 1 / -1; }
+  .cd-up { stroke: var(--up); fill: var(--up); }
+  .cd-down { stroke: var(--down); fill: var(--down); }
+  .cd-flat { stroke: var(--flat); fill: var(--flat); }
+  #mode-box { display: none; margin-bottom: 8px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { appearance: none; border: 0; background: transparent; color: var(--muted); font: inherit;
+                font-size: 12px; padding: 6px 14px; cursor: pointer; }
+  .seg button.on { background: var(--fg); color: var(--bg); font-weight: 600; }
+  details.sector { margin-top: 10px; }
+  details.sector > summary { list-style: none; cursor: pointer; font-size: 13px; color: var(--muted);
+                font-weight: 600; margin: 18px 4px 8px; -webkit-tap-highlight-color: transparent; }
+  details.sector > summary::-webkit-details-marker { display: none; }
+  details.sector > summary::before { content: '▸ '; }
+  details.sector[open] > summary::before { content: '▾ '; }
+  table.tbl { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line);
+              border-radius: 14px; overflow: hidden; font-variant-numeric: tabular-nums; }
+  .tbl th { font-size: 11px; color: var(--muted); font-weight: 500; text-align: right; padding: 8px 6px; }
+  .tbl th:first-child, .tbl td:first-child { text-align: left; padding-left: 10px; }
+  .tbl td { font-size: 12.5px; text-align: right; padding: 9px 6px; border-top: 1px solid var(--line); }
+  .tbl tr.row { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .tbl tr.row:active { opacity: .7; }
+  .tbl .nm small { display: block; font-size: 10.5px; color: var(--muted); }
   .note { font-size: 11px; color: var(--muted); line-height: 1.5; margin: 6px 4px 0; }
 </style>
 </head>
@@ -84,9 +106,9 @@
   </header>
   <div id="banner"></div>
   <main id="root"></main>
-  <footer>지표를 누르면 차트와 이동평균선을 볼 수 있습니다. 등락은 직전 관측일 대비이며 주가·환율·원유는 %,
+  <footer>지표를 누르면 차트(캔들/선)와 이동평균선을 볼 수 있습니다. 캔들은 빨강=상승·파랑=하락이며 오늘 캔들은 장중 값이라 계속 바뀝니다. 미국 섹터는 ‘미국 섹터’를 눌러 펼칩니다. 등락은 직전 관측일 대비이며 주가·환율·원유는 %,
   금리는 bp입니다. 카드의 날짜는 해당 값의 기준일로, 시장별 휴장일이 달라 서로 다를 수 있습니다.
-  출처: Yahoo Finance, 미 재무부(FRED 보조), 한국은행 ECOS.</footer>
+  수집은 15분 주기이나 장이 닫힌 시장은 건너뜁니다. 출처: Yahoo Finance, 미 재무부(FRED 보조), 한국은행 ECOS.</footer>
 </div>
 
 <div id="detail-view">
@@ -98,7 +120,7 @@
     <div class="stamp" id="d-updated"></div>
   </div>
   <div class="panel" id="readout"></div>
-  <div class="panel"><div id="chart"></div></div>
+  <div class="panel"><div id="mode-box"><div class="seg"><button type="button" data-m="candle">캔들</button><button type="button" data-m="line">선</button></div></div><div id="chart"></div></div>
   <div class="panel" id="stats"></div>
   <div class="note" id="d-note"></div>
 </div>
@@ -108,7 +130,8 @@
   var NS = 'http://www.w3.org/2000/svg';
   var DEF_MA = [20, 60, 120], DEF_MONTHS = 8;
   var STALE_HOURS = 3;       // 이 시간 넘게 수집이 없으면 경고
-  var DATA = null, BY_ID = {}, listScroll = 0, current = null;
+  var DATA = null, BY_ID = {}, listScroll = 0, current = null, sectorOpen = false, MODE = 'candle';
+  try { MODE = localStorage.getItem('chartMode') === 'line' ? 'line' : 'candle'; } catch (e) {}
 
   /* ---------- 공통 ---------- */
   function fmt(n, d) {
@@ -206,6 +229,38 @@
     c.addEventListener('keydown', function (e) { if (e.key === 'Enter') open(); });
     return c;
   }
+  function quick(s) {
+    var pts = s.points || [];
+    if (pts.length < 2) return { m: null, ma: null };
+    var c = cfg(s), mm = model(s, c), last = pts.length - 1;
+    var m8 = (mm.closes[last] / mm.closes[mm.start] - 1) * 100;
+    var i20 = mm.mas.indexOf(20), ma = null;
+    if (i20 >= 0 && mm.ma[i20][last] != null) ma = (mm.closes[last] / mm.ma[i20][last] - 1) * 100;
+    return { m: m8, ma: ma };
+  }
+  function pctCell(v, cls) {
+    return el('td', v == null ? '' : dirOf(v), v == null ? '—' : signed(v, 2) + '%');
+  }
+  function sectorTable(g, list) {
+    var d = el('details', 'sector');
+    d.open = sectorOpen;
+    d.addEventListener('toggle', function () { sectorOpen = d.open; });
+    d.appendChild(el('summary', null, g + ' (' + list.length + ')'));
+    var tb = el('table', 'tbl'), hr = el('tr');
+    ['이름', '등락률', '8개월', '20일선 대비'].forEach(function (h) { hr.appendChild(el('th', null, h)); });
+    tb.appendChild(hr);
+    list.forEach(function (s) {
+      var tr = el('tr', 'row'), q = quick(s), nm = el('td', 'nm', s.label);
+      if (s.last != null) nm.appendChild(el('small', null, fmt(s.last, s.decimals) + (s.stale ? ' · 갱신 실패' : '')));
+      tr.appendChild(nm);
+      tr.appendChild(s.change_pct != null ? el('td', dirOf(s.change_pct), signed(s.change_pct, 2) + '%') : el('td', null, '—'));
+      tr.appendChild(pctCell(q.m)); tr.appendChild(pctCell(q.ma));
+      tr.addEventListener('click', function () { listScroll = window.scrollY || 0; location.hash = s.id; });
+      tb.appendChild(tr);
+    });
+    d.appendChild(tb);
+    return d;
+  }
   function renderList() {
     var root = document.getElementById('root');
     root.replaceChildren();
@@ -215,6 +270,10 @@
       byGroup[s.group].push(s);
     });
     groups.forEach(function (g) {
+      if (byGroup[g].every(function (s) { return s.view === 'table'; })) {
+        root.appendChild(sectorTable(g, byGroup[g]));
+        return;
+      }
       root.appendChild(el('h2', null, g));
       var grid = el('div', 'grid');
       byGroup[g].forEach(function (s) { grid.appendChild(card(s)); });
@@ -253,15 +312,19 @@
     var pts = s.points || [];
     var closes = pts.map(function (p) { return p[1]; });
     var ma = c.mas.map(function (n) { return sma(closes, n); });
+    var oh = s.ohlc && s.ohlc.length === pts.length ? s.ohlc : null;
+    var opens = oh ? oh.map(function (r) { return r[0]; }) : null;
+    var highs = oh ? oh.map(function (r) { return r[1]; }) : null;
+    var lows = oh ? oh.map(function (r) { return r[2]; }) : null;
     var endT = tms(pts[pts.length - 1][0]);
     var d = new Date(endT); d.setUTCMonth(d.getUTCMonth() - c.months);
     var startIdx = 0;
     while (startIdx < pts.length - 1 && tms(pts[startIdx][0]) < d.getTime()) startIdx++;
-    return { pts: pts, closes: closes, ma: ma, mas: c.mas, months: c.months,
+    return { pts: pts, closes: closes, opens: opens, highs: highs, lows: lows, ma: ma, mas: c.mas, months: c.months,
              start: startIdx, t0: tms(pts[startIdx][0]), t1: endT };
   }
 
-  function drawChart(s, m, onPick) {
+  function drawChart(s, m, onPick, candle) {
     var host = document.getElementById('chart');
     host.replaceChildren();
     var W = host.clientWidth || 340, H = 280, L = 6, R = 44, T = 8, B = 22;
@@ -270,7 +333,7 @@
 
     var lo = Infinity, hi = -Infinity, i, k;
     for (i = m.start; i < m.pts.length; i++) {
-      var cand = [m.closes[i]];
+      var cand = candle ? [m.highs[i], m.lows[i]] : [m.closes[i]];
       for (k = 0; k < m.ma.length; k++) if (m.ma[k][i] != null) cand.push(m.ma[k][i]);
       cand.forEach(function (x) { if (x < lo) lo = x; if (x > hi) hi = x; });
     }
@@ -311,11 +374,21 @@
       }
       return d;
     }
+    if (candle) {
+      var cw = Math.max(1, Math.min(9, pw / (m.pts.length - m.start) * 0.65));
+      for (i = m.start; i < m.pts.length; i++) {
+        var o = m.opens[i], cl = m.closes[i], cx0 = X(tms(m.pts[i][0]));
+        var cls = cl > o ? 'cd-up' : cl < o ? 'cd-down' : 'cd-flat';
+        svg.appendChild(svgEl('line', { x1: cx0, x2: cx0, y1: Y(m.highs[i]), y2: Y(m.lows[i]), 'class': cls, 'stroke-width': 1 }));
+        var yt = Y(Math.max(o, cl)), yb = Y(Math.min(o, cl));
+        svg.appendChild(svgEl('rect', { x: cx0 - cw / 2, y: yt, width: cw, height: Math.max(1, yb - yt), 'class': cls, 'stroke-width': 0 }));
+      }
+    }
     m.ma.map(function (_, idx) { return idx; }).reverse().forEach(function (idx) {
       var d = pathOf(m.ma[idx]);
       if (d) svg.appendChild(svgEl('path', { d: d, 'class': 'l-ma l-ma' + idx }));
     });
-    svg.appendChild(svgEl('path', { d: pathOf(m.closes), 'class': 'l-price' }));
+    if (!candle) svg.appendChild(svgEl('path', { d: pathOf(m.closes), 'class': 'l-price' }));
 
     var cross = svgEl('line', { y1: T, y2: T + ph, 'class': 'cross', visibility: 'hidden' });
     var dot = svgEl('circle', { r: 3.5, 'class': 'dot', visibility: 'hidden' });
@@ -330,7 +403,7 @@
       }
       var cx = X(tms(m.pts[best][0]));
       cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.setAttribute('visibility', 'visible');
-      dot.setAttribute('cx', cx); dot.setAttribute('cy', Y(m.closes[best])); dot.setAttribute('visibility', 'visible');
+      dot.setAttribute('cx', cx); dot.setAttribute('cy', Y(m.closes[best])); dot.setAttribute('visibility', candle ? 'hidden' : 'visible');
       onPick(best);
     }
     function reset() {
@@ -343,17 +416,19 @@
     host.appendChild(svg);
   }
 
-  function buildReadout(mas) {
+  function buildReadout(mas, candle) {
     var box = document.getElementById('readout');
     box.replaceChildren();
-    box.style.gridTemplateColumns = 'repeat(' + (mas.length + 1) + ', 1fr)';
+    box.style.gridTemplateColumns = 'repeat(' + (candle ? 4 : mas.length + 1) + ', 1fr)';
     var refs = { date: el('div', 'date') };
     box.appendChild(refs.date);
-    [['close', '종가', 'var(--fg)']].concat(mas.map(function (n, i) {
+    (candle ? [['open', '시', 'var(--fg)'], ['high', '고', 'var(--fg)'], ['low', '저', 'var(--fg)'], ['close', '종', 'var(--fg)']]
+            : [['close', '종가', 'var(--fg)']]).concat(mas.map(function (n, i) {
       return ['ma' + i, n + '일', 'var(--ma' + i + ')'];
     })).forEach(function (r) {
       var c = el('div', 'ro'), k = el('div', 'k'), sw = el('i');
-      sw.style.background = r[2];
+      sw.style.background = r[0].indexOf('ma') === 0 ? r[2] : 'transparent';
+      if (r[0].indexOf('ma') !== 0) sw.style.display = 'none';
       k.appendChild(sw); k.appendChild(document.createTextNode(r[1]));
       refs[r[0]] = el('div', 'v', '—');
       c.appendChild(k); c.appendChild(refs[r[0]]);
@@ -373,23 +448,23 @@
     var box = document.getElementById('stats');
     box.replaceChildren();
     var last = m.pts.length - 1, bp = s.kind === 'bp', dec = s.decimals, i;
-    var hiI = m.start, loI = m.start;
+    var hiI = m.start, loI = m.start, HV = m.highs || m.closes, LV = m.lows || m.closes;
     for (i = m.start; i <= last; i++) {
-      if (m.closes[i] > m.closes[hiI]) hiI = i;
-      if (m.closes[i] < m.closes[loI]) loI = i;
+      if (HV[i] > HV[hiI]) hiI = i;
+      if (LV[i] < LV[loI]) loI = i;
     }
     var first = m.closes[m.start], cur = m.closes[last];
     var u = s.unit === '%' ? '%' : '';
-    box.appendChild(stat(m.months + '개월 최고', fmt(m.closes[hiI], dec) + u + ' (' + md(m.pts[hiI][0]) + ')'));
-    box.appendChild(stat(m.months + '개월 최저', fmt(m.closes[loI], dec) + u + ' (' + md(m.pts[loI][0]) + ')'));
+    box.appendChild(stat(m.months + '개월 최고', fmt(HV[hiI], dec) + u + ' (' + md(m.pts[hiI][0]) + ')'));
+    box.appendChild(stat(m.months + '개월 최저', fmt(LV[loI], dec) + u + ' (' + md(m.pts[loI][0]) + ')'));
     var chg = bp ? (cur - first) * 100 : (cur / first - 1) * 100;
     box.appendChild(stat(m.months + '개월 등락 (' + md(m.pts[m.start][0]) + '~)',
                          signed(chg, bp ? 1 : 2) + (bp ? 'bp' : '%'), dirOf(chg)));
     if (!bp) {
-      var dd = (cur / m.closes[hiI] - 1) * 100;
+      var dd = (cur / HV[hiI] - 1) * 100;
       box.appendChild(stat('고점 대비', signed(dd, 2) + '%', dirOf(dd)));
     } else {
-      box.appendChild(stat('고점 대비', signed((cur - m.closes[hiI]) * 100, 1) + 'bp', dirOf(cur - m.closes[hiI])));
+      box.appendChild(stat('고점 대비', signed((cur - HV[hiI]) * 100, 1) + 'bp', dirOf(cur - HV[hiI])));
     }
     var parts = [], vals = [], ok = true;
     m.mas.forEach(function (n, idx) {
@@ -427,24 +502,35 @@
       note.textContent = '이 지표는 아직 차트를 그릴 데이터가 없습니다.' + (s.error ? ' (' + s.error + ')' : '');
       return;
     }
-    var m = model(s, c), refs = buildReadout(c.mas);
+    var m = model(s, c), canCandle = !!m.opens, modeBox = document.getElementById('mode-box');
+    modeBox.style.display = canCandle ? 'block' : 'none';
+    var candle = canCandle && MODE === 'candle';
+    Array.prototype.forEach.call(modeBox.querySelectorAll('button'), function (b) {
+      b.className = (b.getAttribute('data-m') === (candle ? 'candle' : 'line')) ? 'on' : '';
+    });
+    var refs = buildReadout(c.mas, candle);
     var u = s.unit === '%' ? '%' : '';
     function setReadout(i) {
       refs.date.textContent = m.pts[i][0];
+      if (candle) {
+        refs.open.textContent = fmt(m.opens[i], s.decimals);
+        refs.high.textContent = fmt(m.highs[i], s.decimals);
+        refs.low.textContent = fmt(m.lows[i], s.decimals);
+      }
       refs.close.textContent = fmt(m.closes[i], s.decimals) + u;
       c.mas.forEach(function (n, idx) {
         var mv = m.ma[idx][i];
         refs['ma' + idx].textContent = mv == null ? '—' : fmt(mv, s.decimals) + u;
       });
     }
-    function draw() { drawChart(s, m, setReadout); setReadout(m.pts.length - 1); }
-    current = { draw: draw };
+    function draw() { drawChart(s, m, setReadout, candle); setReadout(m.pts.length - 1); }
+    current = { draw: draw, s: s };
     draw();
     renderStats(s, m);
     var histDays = Math.round((m.t1 - tms(m.pts[0][0])) / 864e5);
     note.textContent = (s.note ? s.note + '. ' : '') +
       '이동평균은 일별 종가의 단순이동평균(거래일 기준)이며 현재 보관 중인 약 ' + histDays +
-      '일 데이터로 계산합니다. 차트를 누르거나 좌우로 끌면 날짜별 값을 볼 수 있습니다. 출처: ' + s.source +
+      '일 데이터로 계산합니다.' + (candle ? ' 캔들: 빨강=종가>시가(상승), 파랑=하락, 오늘 캔들은 장중 값입니다.' : '') + ' 차트를 누르거나 좌우로 끌면 날짜별 값을 볼 수 있습니다. 출처: ' + s.source +
       (s.stale ? ' · 최근 갱신 실패로 이전 값 표시 중' : '') + '.';
   }
 
@@ -464,6 +550,13 @@
       window.scrollTo(0, listScroll);
     }
   }
+  Array.prototype.forEach.call(document.querySelectorAll('#mode-box button'), function (b) {
+    b.addEventListener('click', function () {
+      MODE = b.getAttribute('data-m');
+      try { localStorage.setItem('chartMode', MODE); } catch (e) {}
+      if (current) renderDetail(current.s);
+    });
+  });
   window.addEventListener('hashchange', route);
   var rt;
   window.addEventListener('resize', function () {
