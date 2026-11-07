@@ -52,6 +52,7 @@ SERIES = [
     ("nasdaq", "나스닥 종합", "주가지수", "", 2, "pct", ("yahoo", "^IXIC"), {"cal": "us", "candle": True}),
     ("spx", "S&P 500", "주가지수", "", 2, "pct", ("yahoo", "^GSPC"), {"cal": "us", "candle": True}),
     ("djt", "다우 운송", "주가지수", "", 2, "pct", ("yahoo", "^DJT"), {"cal": "us", "candle": True}),
+    ("ewy", "EWY (한국 ETF, 달러)", "주가지수", "$", 2, "pct", ("yahoo", "EWY"), {"cal": "us", "candle": True}),
     ("us10y", "미국채 10년", "금리", "%", 3, "bp", ("ust", ("10 Yr", "DGS10")), {"every": 180}),
     ("kr3y", "국고채 3년", "금리", "%", 3, "bp", ("ecos", "국고채(3년)"), {"every": 180}),
     ("wti", "WTI 원유", "원자재·환율", "$", 2, "pct", ("yahoo", "CL=F"), {"cal": "fx", "candle": True}),
@@ -67,6 +68,11 @@ SERIES = [
      {"cal": "vix", "candle": True, "ma": [10, 20], "months": 3}),
     ("btc", "비트코인", "위험·심리", "$", 0, "pct", ("yahoo", "BTC-USD"),
      {"cal": "always", "candle": True}),
+    ("samsung", "삼성전자", "반도체 주식", "원", 0, "pct", ("yahoo", "005930.KS"), {"cal": "kr", "candle": True}),
+    ("hynix", "SK하이닉스", "반도체 주식", "원", 0, "pct", ("yahoo", "000660.KS"), {"cal": "kr", "candle": True}),
+    ("mu", "마이크론", "반도체 주식", "$", 2, "pct", ("yahoo", "MU"), {"cal": "us", "candle": True}),
+    ("sndk", "샌디스크", "반도체 주식", "$", 2, "pct", ("yahoo", "SNDK"), {"cal": "us", "candle": True}),
+    ("tsm", "TSMC (ADR)", "반도체 주식", "$", 2, "pct", ("yahoo", "TSM"), {"cal": "us", "candle": True}),
 ] + [
     (sid, "%s (%s)" % (name, sym), "미국 섹터", "$", 2, "pct", ("yahoo", sym),
      {"cal": "us", "candle": True, "view": "table"})
