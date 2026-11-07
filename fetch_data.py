@@ -30,8 +30,9 @@ SERIES = [
     ("kosdaq", "코스닥", "주가지수", "", 2, "pct", ("yahoo", "^KQ11")),
     ("nasdaq", "나스닥 종합", "주가지수", "", 2, "pct", ("yahoo", "^IXIC")),
     ("spx", "S&P 500", "주가지수", "", 2, "pct", ("yahoo", "^GSPC")),
-    ("us2y", "미국채 2년", "금리", "%", 3, "bp", ("fred", "DGS2")),
-    ("us10y", "미국채 10년", "금리", "%", 3, "bp", ("fred", "DGS10")),
+    ("us2y", "미국채 2년", "금리", "%", 3, "bp", ("ust", ("2 Yr", "DGS2"))),
+    ("us10y", "미국채 10년", "금리", "%", 3, "bp", ("ust", ("10 Yr", "DGS10"))),
+    ("us30y", "미국채 30년", "금리", "%", 3, "bp", ("ust", ("30 Yr", "DGS30"))),
     ("kr3y", "국고채 3년", "금리", "%", 3, "bp", ("ecos", "국고채(3년)")),
     ("kr10y", "국고채 10년", "금리", "%", 3, "bp", ("ecos", "국고채(10년)")),
     ("wti", "WTI 원유", "원자재·환율", "$", 2, "pct", ("yahoo", "CL=F")),
@@ -74,6 +75,43 @@ def fetch_fred(series_id):
     return pts
 
 
+def fetch_treasury(col, _cache={}):
+    """미 재무부 Daily Par Yield Curve CSV (연도별). col 예: '10 Yr'."""
+    year = datetime.now(timezone.utc).year
+    pts = {}
+    for y in (year - 1, year):
+        if y not in _cache:
+            url = ("https://home.treasury.gov/resource-center/data-chart-center/interest-rates/"
+                   "daily-treasury-rates.csv/%d/all?type=daily_treasury_yield_curve"
+                   "&field_tdr_date_value=%d&page&_format=csv" % (y, y))
+            _cache[y] = list(csv.reader(io.StringIO(http_get(url))))
+        rows = _cache[y]
+        header = [h.strip() for h in rows[0]]
+        if col not in header:
+            raise RuntimeError("열 없음: " + col)
+        ci = header.index(col)
+        for r in rows[1:]:
+            if len(r) <= ci or not r[ci].strip():
+                continue
+            mm, dd, yy = r[0].strip().split("/")
+            pts["%s-%s-%s" % (yy, mm, dd)] = float(r[ci])
+    if not pts:
+        raise RuntimeError("데이터 없음")
+    return [[k, pts[k]] for k in sorted(pts)]
+
+
+def fetch_ust(code):
+    """미국채: 재무부 CSV 우선, 실패 시 FRED로 대체."""
+    col, fred_id = code
+    try:
+        return fetch_treasury(col)
+    except Exception as e1:  # noqa: BLE001
+        try:
+            return fetch_fred(fred_id)
+        except Exception as e2:  # noqa: BLE001
+            raise RuntimeError("재무부 %s / FRED %s" % (str(e1)[:50], str(e2)[:50]))
+
+
 def _ecos(path):
     data = json.loads(http_get("https://ecos.bok.or.kr/api/" + path))
     if "RESULT" in data:
@@ -112,8 +150,9 @@ def fetch_ecos(item_name, _cache={}):
     return pts
 
 
-FETCHERS = {"yahoo": fetch_yahoo, "fred": fetch_fred, "ecos": fetch_ecos}
-SOURCE_LABEL = {"yahoo": "Yahoo Finance", "fred": "FRED", "ecos": "한국은행 ECOS"}
+FETCHERS = {"yahoo": fetch_yahoo, "fred": fetch_fred, "ecos": fetch_ecos, "ust": fetch_ust}
+SOURCE_LABEL = {"yahoo": "Yahoo Finance", "fred": "FRED", "ecos": "한국은행 ECOS",
+                "ust": "미 재무부(FRED 보조)"}
 
 
 def summarize(pts, kind):

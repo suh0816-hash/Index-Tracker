@@ -190,7 +190,9 @@
     document.getElementById('updated').textContent =
       '수집 ' + gen.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric',
                                              hour: '2-digit', minute: '2-digit', hour12: false });
-    var problems = DATA.series.filter(function (s) { return s.error; }).map(function (s) { return s.label; });
+    var problems = DATA.series.filter(function (s) { return s.error; }).map(function (s) {
+      return s.label + '(' + String(s.error).slice(0, 70) + ')';
+    });
     var ageH = (Date.now() - gen.getTime()) / 36e5, msgs = [];
     if (problems.length) msgs.push('수집 실패: ' + problems.join(', '));
     if (ageH > 96) msgs.push('마지막 수집이 ' + Math.floor(ageH / 24) + '일 전입니다.');
