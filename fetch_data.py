@@ -4,6 +4,8 @@
 출처
 - 주가지수·원자재·환율·VIX·비트코인·섹터 ETF: Yahoo Finance chart API (비공식, 키 불필요)
 - 미국채 10년: 미 재무부 일별 금리 CSV (실패 시 FRED로 대체, 키 불필요)
+- 일본 국채 10년: 일본 재무성 국채금리 CSV (키 불필요)
+- 기준금리: 미국=뉴욕 연준(실패 시 FRED), 한국=ECOS, 일본=코드 안의 표(POLICY_JP, 변경 시 직접 수정)
 - 국고채 3년: 한국은행 ECOS (817Y002, 키 필요: 환경변수 ECOS_API_KEY)
 
 수집 방식
@@ -26,11 +28,11 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")
-KEEP_DAYS = 450  # 보관 기간(일): 8개월 표시 + 120일 이동평균 계산용
+KEEP_DAYS = 740  # 보관 기간(일): 1년 표시 + 250일 이동평균 계산용 (Yahoo range=2y에 맞춤)
 UA = {"User-Agent": "Mozilla/5.0 (stock-dashboard)"}
 TIMEOUT = 30
 DEFAULT_MA = [20, 60, 120]
-DEFAULT_MONTHS = 8
+DEFAULT_MONTHS = 12
 IDLE_MINUTES = 360  # 장이 닫혀 있을 때 확인 주기(분)
 
 # (id, 표시명, 그룹, 단위, 소수자리, kind, (출처, 코드), 추가설정)
@@ -48,13 +50,18 @@ SECTORS = [("xlk", "기술", "XLK"), ("xlf", "금융", "XLF"), ("xle", "에너�
 SERIES = [
     ("kospi", "코스피", "주가지수", "", 2, "pct", ("yahoo", "^KS11"), {"cal": "kr", "candle": True}),
     ("kosdaq", "코스닥", "주가지수", "", 2, "pct", ("yahoo", "^KQ11"), {"cal": "kr", "candle": True}),
+    ("ewy", "EWY (한국 ETF, 달러)", "주가지수", "$", 2, "pct", ("yahoo", "EWY"), {"cal": "us", "candle": True}),
     ("nikkei", "니케이 225", "주가지수", "", 2, "pct", ("yahoo", "^N225"), {"cal": "jp", "candle": True}),
     ("nasdaq", "나스닥 종합", "주가지수", "", 2, "pct", ("yahoo", "^IXIC"), {"cal": "us", "candle": True}),
     ("spx", "S&P 500", "주가지수", "", 2, "pct", ("yahoo", "^GSPC"), {"cal": "us", "candle": True}),
-    ("djt", "다우 운송", "주가지수", "", 2, "pct", ("yahoo", "^DJT"), {"cal": "us", "candle": True}),
-    ("ewy", "EWY (한국 ETF, 달러)", "주가지수", "$", 2, "pct", ("yahoo", "EWY"), {"cal": "us", "candle": True}),
-    ("us10y", "미국채 10년", "금리", "%", 3, "bp", ("ust", ("10 Yr", "DGS10")), {"every": 180}),
-    ("kr3y", "국고채 3년", "금리", "%", 3, "bp", ("ecos", "국고채(3년)"), {"every": 180}),
+    ("djt", "다우 운송", "주가지수", "", 2, "pct", ("yahoo", "^DJT"),
+     {"cal": "us", "candle": True, "ma": [20, 60, 120, 250]}),
+    ("us10y", "미국채 10년", "금리", "%", 3, "bp", ("ust", ("10 Yr", "DGS10")),
+     {"every": 180, "policy": "us", "policy_label": "미국 기준금리(목표 상단)"}),
+    ("kr3y", "국고채 3년", "금리", "%", 3, "bp", ("ecos", "국고채(3년)"),
+     {"every": 180, "policy": "kr", "policy_label": "한국 기준금리"}),
+    ("jp10y", "일본 국채 10년", "금리", "%", 3, "bp", ("mof", "10Y"),
+     {"every": 180, "policy": "jp", "policy_label": "일본 정책금리"}),
     ("wti", "WTI 원유", "원자재·환율", "$", 2, "pct", ("yahoo", "CL=F"), {"cal": "fx", "candle": True}),
     ("gold", "금", "원자재·환율", "$", 1, "pct", ("yahoo", "GC=F"), {"cal": "fx", "candle": True}),
     ("usdkrw", "원/달러", "원자재·환율", "원", 2, "pct", ("yahoo", "KRW=X"),
@@ -68,18 +75,19 @@ SERIES = [
      {"cal": "vix", "candle": True, "ma": [10, 20], "months": 3}),
     ("btc", "비트코인", "위험·심리", "$", 0, "pct", ("yahoo", "BTC-USD"),
      {"cal": "always", "candle": True}),
-    ("samsung", "삼성전자", "반도체 주식", "원", 0, "pct", ("yahoo", "005930.KS"), {"cal": "kr", "candle": True}),
-    ("hynix", "SK하이닉스", "반도체 주식", "원", 0, "pct", ("yahoo", "000660.KS"), {"cal": "kr", "candle": True}),
-    ("mu", "마이크론", "반도체 주식", "$", 2, "pct", ("yahoo", "MU"), {"cal": "us", "candle": True}),
-    ("sndk", "샌디스크", "반도체 주식", "$", 2, "pct", ("yahoo", "SNDK"), {"cal": "us", "candle": True}),
-    ("tsm", "TSMC (ADR)", "반도체 주식", "$", 2, "pct", ("yahoo", "TSM"), {"cal": "us", "candle": True}),
+    ("samsung", "삼성전자", "반도체 주식", "원", 0, "pct", ("yahoo", "005930.KS"), {"cal": "kr", "candle": True, "view": "table_open"}),
+    ("hynix", "SK하이닉스", "반도체 주식", "원", 0, "pct", ("yahoo", "000660.KS"), {"cal": "kr", "candle": True, "view": "table_open"}),
+    ("mu", "마이크론", "반도체 주식", "$", 2, "pct", ("yahoo", "MU"), {"cal": "us", "candle": True, "view": "table_open"}),
+    ("sndk", "샌디스크", "반도체 주식", "$", 2, "pct", ("yahoo", "SNDK"), {"cal": "us", "candle": True, "view": "table_open"}),
+    ("tsm", "TSMC (ADR)", "반도체 주식", "$", 2, "pct", ("yahoo", "TSM"), {"cal": "us", "candle": True, "view": "table_open"}),
 ] + [
     (sid, "%s (%s)" % (name, sym), "미국 섹터", "$", 2, "pct", ("yahoo", sym),
      {"cal": "us", "candle": True, "view": "table"})
     for sid, name, sym in SECTORS
 ]
 
-DATA_KEYS = ("points", "ohlc", "last", "as_of", "prev", "change", "change_pct", "fetched_at")
+DATA_KEYS = ("points", "ohlc", "last", "as_of", "prev", "change", "change_pct", "fetched_at",
+             "policy", "policy_error")
 
 
 def utcnow():
@@ -193,7 +201,7 @@ def fetch_treasury(col, _cache={}):
     """미 재무부 Daily Par Yield Curve CSV (연도별). col 예: '10 Yr'."""
     year = utcnow().year
     pts = {}
-    for y in (year - 1, year):
+    for y in (year - 2, year - 1, year):
         if y not in _cache:
             url = ("https://home.treasury.gov/resource-center/data-chart-center/interest-rates/"
                    "daily-treasury-rates.csv/%d/all?type=daily_treasury_yield_curve"
@@ -252,7 +260,7 @@ def fetch_ecos(item_name, _cache={}):
     today = utcnow().date()
     s = (today - timedelta(days=KEEP_DAYS + 20)).strftime("%Y%m%d")
     e = today.strftime("%Y%m%d")
-    res = _ecos("StatisticSearch/%s/json/kr/1/500/%s/D/%s/%s/%s"
+    res = _ecos("StatisticSearch/%s/json/kr/1/1000/%s/D/%s/%s/%s"
                 % (key, stat, s, e, code))
     pts = []
     for r in res["StatisticSearch"]["row"]:
@@ -264,9 +272,104 @@ def fetch_ecos(item_name, _cache={}):
     return pts
 
 
-FETCHERS = {"yahoo": fetch_yahoo, "fred": fetch_fred, "ecos": fetch_ecos, "ust": fetch_ust}
+def fetch_mof(col):
+    """일본 재무성 국채금리 CSV(일별, 전 만기). col 예: '10Y'."""
+    base = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/"
+    last = None
+    for path in ("historical/jgbcm_all.csv", "jgbcm.csv"):
+        try:
+            rows = list(csv.reader(io.StringIO(http_get(base + path))))
+            hi = next(i for i, r in enumerate(rows) if r and r[0].strip() == "Date")
+            header = [h.strip() for h in rows[hi]]
+            ci = header.index(col)
+            pts = []
+            for r in rows[hi + 1:]:
+                if len(r) <= ci or not r[0].strip() or r[ci].strip() in ("", "-"):
+                    continue
+                y, m, d = r[0].strip().split("/")
+                pts.append(["%04d-%02d-%02d" % (int(y), int(m), int(d)), float(r[ci])])
+            if pts:
+                pts.sort()
+                return pts
+            raise RuntimeError("데이터 없음")
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+    raise RuntimeError("재무성 CSV: %s" % str(last)[:60])
+
+
+# ---------------------------------------------------------------- 기준금리
+# 일본 정책금리 변경 이력 (결정일, 금리%). 일본은행이 금리를 바꿀 때만 한 줄 추가하면 된다.
+POLICY_JP = [("2024-07-31", 0.25), ("2025-01-24", 0.50), ("2025-12-19", 0.75),
+             ("2026-06-16", 1.00), ("2026-09-18", 1.25)]
+
+
+def compress_policy(daily, cutoff):
+    """일별 [날짜, 금리] -> 변경 시점만 남기고, cutoff 이전 마지막 값부터 보관."""
+    pts, prev = [], None
+    for d, v in sorted(daily):
+        v = round(float(v), 4)
+        if v != prev:
+            pts.append([d, v])
+            prev = v
+    base = [i for i, p in enumerate(pts) if p[0] <= cutoff]
+    return pts[base[-1]:] if base else pts
+
+
+def fetch_policy_us():
+    """연방기금 목표금리 상단. 뉴욕 연준 -> 실패 시 FRED(DFEDTARU)."""
+    today = utcnow().date()
+    start = (today - timedelta(days=KEEP_DAYS + 400)).isoformat()
+    try:
+        url = ("https://markets.newyorkfed.org/api/rates/unsecured/effr/search.json"
+               "?startDate=%s&endDate=%s" % (start, today.isoformat()))
+        rows = json.loads(http_get(url))["refRates"]
+        daily = []
+        for r in rows:
+            top = r.get("targetRateTo", r.get("targetRangeTo"))
+            if top is not None:
+                daily.append([r["effectiveDate"], top])
+        if not daily:
+            raise RuntimeError("목표금리 없음")
+        return daily
+    except Exception as e1:  # noqa: BLE001
+        try:
+            return fetch_fred("DFEDTARU")
+        except Exception as e2:  # noqa: BLE001
+            raise RuntimeError("뉴욕연준 %s / FRED %s" % (str(e1)[:40], str(e2)[:40]))
+
+
+def fetch_policy_kr():
+    key = os.environ.get("ECOS_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("ECOS_API_KEY 없음")
+    stat = "722Y001"  # 한국은행 기준금리
+    today = utcnow().date()
+    s = (today - timedelta(days=KEEP_DAYS + 400)).strftime("%Y%m%d")
+    e = today.strftime("%Y%m%d")
+    lst = _ecos("StatisticItemList/%s/json/kr/1/100/%s" % (key, stat))["StatisticItemList"]["row"]
+    code = next((r["ITEM_CODE"] for r in lst if "기준금리" in r["ITEM_NAME"]), None)
+    if code is None:
+        raise RuntimeError("ECOS 기준금리 항목 없음")
+    res = _ecos("StatisticSearch/%s/json/kr/1/1000/%s/D/%s/%s/%s" % (key, stat, s, e, code))
+    daily = []
+    for r in res["StatisticSearch"]["row"]:
+        t_, v = r["TIME"], r["DATA_VALUE"]
+        if v not in ("", None):
+            daily.append(["%s-%s-%s" % (t_[:4], t_[4:6], t_[6:8]), float(v)])
+    if not daily:
+        raise RuntimeError("데이터 없음")
+    return daily
+
+
+def fetch_policy_jp():
+    return [[d, v] for d, v in POLICY_JP]
+
+
+POLICY_FETCHERS = {"us": fetch_policy_us, "kr": fetch_policy_kr, "jp": fetch_policy_jp}
+
+FETCHERS = {"yahoo": fetch_yahoo, "mof": fetch_mof, "fred": fetch_fred, "ecos": fetch_ecos, "ust": fetch_ust}
 SOURCE_LABEL = {"yahoo": "Yahoo Finance", "fred": "FRED", "ecos": "한국은행 ECOS",
-                "ust": "미 재무부(FRED 보조)"}
+                "ust": "미 재무부(FRED 보조)", "mof": "일본 재무성"}
 
 
 # ---------------------------------------------------------------- 가공
@@ -301,6 +404,8 @@ def make_item(spec):
     item = {"id": sid, "label": label, "group": group, "unit": unit, "decimals": dec,
             "kind": kind, "source": SOURCE_LABEL[stype],
             "ma": extra.get("ma", DEFAULT_MA), "months": extra.get("months", DEFAULT_MONTHS)}
+    if extra.get("policy"):
+        item["policy_label"] = extra.get("policy_label", "기준금리")
     for k in ("note", "view"):
         if k in extra:
             item[k] = extra[k]
@@ -338,6 +443,18 @@ def main():
                 raise RuntimeError("데이터 없음")
             item.update(summarize(pts, kind, extra.get("candle", False), dec))
             item["fetched_at"] = now.isoformat(timespec="seconds")
+            if extra.get("policy"):  # 기준금리: 실패해도 지표 자체는 성공으로 본다
+                item["policy_label"] = extra.get("policy_label", "기준금리")
+                try:
+                    cutoff = (datetime.strptime(item["as_of"], "%Y-%m-%d")
+                              - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
+                    item["policy"] = compress_policy(POLICY_FETCHERS[extra["policy"]](), cutoff)
+                    item.pop("policy_error", None)
+                except Exception as pe:  # noqa: BLE001
+                    print("[WARN] %s 기준금리 실패: %s" % (sid, pe), file=sys.stderr)
+                    if prev and prev.get("policy"):
+                        item["policy"] = prev["policy"]
+                    item["policy_error"] = str(pe)[:80]
         except Exception as exc:  # noqa: BLE001 - 시리즈 단위로 격리
             failures += 1
             print("[WARN] %s 실패: %s" % (sid, exc), file=sys.stderr)

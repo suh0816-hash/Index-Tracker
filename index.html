@@ -11,12 +11,12 @@
     --up: #d92d20;   /* 상승: 빨강 (한국식) */
     --down: #1d6fe0; /* 하락: 파랑 */
     --flat: #6b7280; --warn: #b45309;
-    --ma0: #d97706; --ma1: #059669; --ma2: #7c3aed;
+    --ma0: #d97706; --ma1: #059669; --ma2: #7c3aed; --ma3: #db2777;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #0f1115; --card: #181b21; --fg: #eef0f3; --muted: #9aa1ad;
             --line: #272b33; --up: #ff6b5e; --down: #5aa2ff; --flat: #9aa1ad; --warn: #f5a524;
-            --ma0: #fbbf24; --ma1: #34d399; --ma2: #a78bfa; }
+            --ma0: #fbbf24; --ma1: #34d399; --ma2: #a78bfa; --ma3: #f472b6; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg);
@@ -25,7 +25,14 @@
                   max(24px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
   header { margin: 4px 4px 12px; }
   h1 { font-size: 20px; margin: 0; }
-  .tagline { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .quote { display: flex; gap: 8px; align-items: flex-start; margin-top: 6px; }
+  .quote .qbody { flex: 1; min-width: 0; }
+  .quote .regime { font-size: 11px; margin-bottom: 3px; }
+  .quote .qtext { font-size: 13.5px; line-height: 1.5; }
+  .quote .qauth { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .quote button { appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--fg);
+                  border-radius: 8px; width: 34px; height: 34px; font-size: 16px; cursor: pointer; flex: none; }
+  .quote button:active { opacity: .6; }
   .stamp { font-size: 12px; color: var(--muted); margin-top: 8px; }
   h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 18px 4px 8px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -63,8 +70,9 @@
   .axis { fill: var(--muted); font-size: 10px; }
   .gridline { stroke: var(--line); stroke-width: 1; }
   .l-price { stroke: var(--fg); stroke-width: 1.8; fill: none; stroke-linejoin: round; }
-  .l-ma0 { stroke: var(--ma0); } .l-ma1 { stroke: var(--ma1); } .l-ma2 { stroke: var(--ma2); }
+  .l-ma0 { stroke: var(--ma0); } .l-ma1 { stroke: var(--ma1); } .l-ma2 { stroke: var(--ma2); } .l-ma3 { stroke: var(--ma3); }
   .l-ma { stroke-width: 1.4; fill: none; stroke-linejoin: round; }
+  .l-pol { stroke: var(--fg); stroke-width: 1.3; stroke-dasharray: 4 3; fill: none; opacity: .75; }
   .cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
   .dot { fill: var(--fg); }
   #stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 10px; }
@@ -74,7 +82,8 @@
   .cd-up { stroke: var(--up); fill: var(--up); }
   .cd-down { stroke: var(--down); fill: var(--down); }
   .cd-flat { stroke: var(--flat); fill: var(--flat); }
-  #mode-box { display: none; margin-bottom: 8px; }
+  #ctl { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  #mode-box { display: none; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .seg button { appearance: none; border: 0; background: transparent; color: var(--muted); font: inherit;
                 font-size: 12px; padding: 6px 14px; cursor: pointer; }
@@ -101,14 +110,21 @@
 <div id="list-view">
   <header>
     <h1>지표 추적자</h1>
-    <div class="tagline">여보 신기하지?</div>
+    <div class="quote">
+      <div class="qbody">
+        <div class="regime" id="q-regime"></div>
+        <div class="qtext" id="q-text"></div>
+        <div class="qauth" id="q-auth"></div>
+      </div>
+      <button type="button" id="q-btn" aria-label="다른 명언 보기" title="다른 명언">↻</button>
+    </div>
     <div class="stamp" id="updated">불러오는 중…</div>
   </header>
   <div id="banner"></div>
   <main id="root"></main>
-  <footer>지표를 누르면 차트(캔들/선)와 이동평균선을 볼 수 있습니다. 캔들은 빨강=상승·파랑=하락이며 오늘 캔들은 장중 값이라 계속 바뀝니다. 미국 섹터는 ‘미국 섹터’를 눌러 펼칩니다. 등락은 직전 관측일 대비이며 주가·환율·원유는 %,
+  <footer>지표를 누르면 차트(캔들/선)와 이동평균선을 볼 수 있습니다. 차트는 좌우로 끌어 이동하고 두 손가락으로 확대·축소하며, 길게 누르면 날짜별 값이 보입니다. 캔들은 빨강=상승·파랑=하락이며 오늘 캔들은 장중 값이라 계속 바뀝니다. 미국 섹터는 ‘미국 섹터’를 눌러 펼칩니다. 등락은 직전 관측일 대비이며 주가·환율·원유는 %,
   금리는 bp입니다. 카드의 날짜는 해당 값의 기준일로, 시장별 휴장일이 달라 서로 다를 수 있습니다.
-  수집은 15분 주기이나 장이 닫힌 시장은 건너뜁니다. 출처: Yahoo Finance, 미 재무부(FRED 보조), 한국은행 ECOS.</footer>
+  수집은 15분 주기이나 장이 닫힌 시장은 건너뜁니다. 출처: Yahoo Finance, 미 재무부(FRED 보조), 한국은행 ECOS. 명언은 코스피 종가가 120일선 위/아래인지에 따라 고릅니다.</footer>
 </div>
 
 <div id="detail-view">
@@ -120,7 +136,7 @@
     <div class="stamp" id="d-updated"></div>
   </div>
   <div class="panel" id="readout"></div>
-  <div class="panel"><div id="mode-box"><div class="seg"><button type="button" data-m="candle">캔들</button><button type="button" data-m="line">선</button></div></div><div id="chart"></div></div>
+  <div class="panel"><div id="ctl"><div id="mode-box"><div class="seg"><button type="button" data-m="candle">캔들</button><button type="button" data-m="line">선</button></div></div><div class="seg" id="zoom-box"><button type="button" id="z-6">6개월</button><button type="button" id="z-all">1년</button><button type="button" id="z-in">＋</button><button type="button" id="z-out">－</button></div></div><div id="chart"></div></div>
   <div class="panel" id="stats"></div>
   <div class="note" id="d-note"></div>
 </div>
@@ -128,9 +144,10 @@
 <script>
 (function () {
   var NS = 'http://www.w3.org/2000/svg';
-  var DEF_MA = [20, 60, 120], DEF_MONTHS = 8;
+  var DEF_MA = [20, 60, 120], DEF_MONTHS = 12, VIEW_MONTHS = 6, MIN_SPAN = 21 * 864e5;
+  var HI52 = { kospi: 1, kosdaq: 1, nikkei: 1, nasdaq: 1, spx: 1, ewy: 1, gold: 1, btc: 1 };
   var STALE_HOURS = 3;       // 이 시간 넘게 수집이 없으면 경고
-  var DATA = null, BY_ID = {}, listScroll = 0, current = null, sectorOpen = false, MODE = 'candle';
+  var DATA = null, BY_ID = {}, listScroll = 0, current = null, openState = {}, MODE = 'candle';
   try { MODE = localStorage.getItem('chartMode') === 'line' ? 'line' : 'candle'; } catch (e) {}
 
   /* ---------- 공통 ---------- */
@@ -182,6 +199,55 @@
     document.getElementById('d-updated').textContent = t;
   }
 
+
+  /* ---------- 투자 대가의 명언 (코스피 종가 vs 120일선) ---------- */
+  var Q_UP = [  // above the 120-day MA
+    ['Be fearful when others are greedy, and greedy when others are fearful.', 'Warren Buffett'],
+    ["Only when the tide goes out do you discover who's been swimming naked.", 'Warren Buffett'],
+    ['Bull markets are born on pessimism, grow on skepticism, mature on optimism, and die on euphoria.', 'John Templeton'],
+    ['The big money is not in the buying and selling, but in the waiting.', 'Charlie Munger'],
+    ["We may never know where we're going, but we'd better have a good idea where we are.", 'Howard Marks'],
+    ["The investor's chief problem \u2014 and even his worst enemy \u2014 is likely to be himself.", 'Benjamin Graham'],
+    ['Far more money has been lost by investors preparing for corrections, or trying to anticipate corrections, than has been lost in the corrections themselves.', 'Peter Lynch'],
+    ["You can't predict. You can prepare.", 'Howard Marks']
+  ];
+  var Q_DOWN = [  // below the 120-day MA
+    ['The time of maximum pessimism is the best time to buy, and the time of maximum optimism is the best time to sell.', 'John Templeton'],
+    ['Be fearful when others are greedy, and greedy when others are fearful.', 'Warren Buffett'],
+    ['The real key to making money in stocks is not to get scared out of them.', 'Peter Lynch'],
+    ["If you're not willing to react with equanimity to a market price decline of 50% two or three times a century, you're not fit to be a common shareholder.", 'Charlie Munger'],
+    ['In the short run, the market is a voting machine, but in the long run, it is a weighing machine.', 'Benjamin Graham'],
+    ["Investing is not about buying good things; it's about buying things well.", 'Howard Marks'],
+    ["It's not whether you're right or wrong that's important, but how much money you make when you're right and how much you lose when you're wrong.", 'George Soros'],
+    ["If you aren't willing to own a stock for 10 years, don't even think about owning it for 10 minutes.", 'Warren Buffett']
+  ];
+  var Q_ALL = Q_UP.concat(Q_DOWN), qState = { kind: null, last: -1 };
+
+  function kospiRegime() {   // 코스피 종가의 120일 단순이동평균 대비 위치(%)
+    var s = BY_ID.kospi;
+    if (!s || !s.points || s.points.length < 120) return null;
+    var p = s.points, sum = 0;
+    for (var i = p.length - 120; i < p.length; i++) sum += p[i][1];
+    var ma = sum / 120, gap = (p[p.length - 1][1] / ma - 1) * 100;
+    return { gap: gap, up: gap >= 0 };
+  }
+  function showQuote(change) {
+    var rg = kospiRegime(), list = rg ? (rg.up ? Q_UP : Q_DOWN) : Q_ALL;
+    var kind = rg ? (rg.up ? 'up' : 'down') : 'all';
+    var idx;
+    if (change || qState.kind !== kind || qState.last < 0) {
+      do { idx = Math.floor(Math.random() * list.length); }
+      while (list.length > 1 && idx === qState.last && qState.kind === kind);
+    } else idx = qState.last;
+    qState = { kind: kind, last: idx };
+    var r = document.getElementById('q-regime');
+    r.className = 'regime ' + (rg ? (rg.up ? 'up' : 'down') : 'flat');
+    r.textContent = rg ? '코스피 120일선 ' + (rg.up ? '위' : '아래') + ' (' + signed(rg.gap, 2) + '%) · ' +
+                         (rg.up ? '상승장' : '하락장') : '코스피 120일선 계산 불가';
+    document.getElementById('q-text').textContent = '“' + list[idx][0] + '”';
+    document.getElementById('q-auth').textContent = '— ' + list[idx][1];
+  }
+
   /* ---------- 목록 화면 ---------- */
   function spark(points, dir) {
     var svg = svgEl('svg', { viewBox: '0 0 100 36', preserveAspectRatio: 'none' });
@@ -203,6 +269,23 @@
     return arrow(s.change) + ' ' + fmt(Math.abs(s.change), s.decimals) +
            (s.change_pct != null ? ' (' + fmt(Math.abs(s.change_pct), 2) + '%)' : '');
   }
+  function high52(s) {   // 최근 365일 장중 고가(없으면 종가) 대비 현재가 위치(%)
+    var p = s.points;
+    if (!p || p.length < 2 || s.last == null) return null;
+    var cut = tms(p[p.length - 1][0]) - 365 * 864e5, hi = -Infinity;
+    for (var i = 0; i < p.length; i++) {
+      if (tms(p[i][0]) < cut) continue;
+      var v = (s.ohlc && s.ohlc.length === p.length) ? s.ohlc[i][1] : p[i][1];
+      if (v > hi) hi = v;
+    }
+    return (hi > 0 && isFinite(hi)) ? (s.last / hi - 1) * 100 : null;
+  }
+  function polAt(pol, dateStr) {   // 날짜 기준 적용 중인 기준금리(변경 이력 중 직전 값)
+    var v = null;
+    if (!pol) return null;
+    for (var i = 0; i < pol.length; i++) { if (pol[i][0] <= dateStr) v = pol[i][1]; else break; }
+    return v;
+  }
   function card(s) {
     var c = el('div', 'card');
     c.setAttribute('role', 'button');
@@ -222,6 +305,13 @@
     var dir = s.change != null ? dirOf(s.change) : 'flat';
     c.appendChild(el('div', 'chg ' + dir, changeText(s)));
     if (s.points && s.points.length > 1) c.appendChild(spark(s.points.slice(-60), dir));
+    if (HI52[s.id]) {
+      var g52 = high52(s);
+      if (g52 != null) c.appendChild(el('div', 'meta', '52주 고점 대비 ' + signed(g52, 1) + '%'));
+    }
+    if (s.policy && s.policy.length) {
+      c.appendChild(el('div', 'meta', (s.policy_label || '기준금리') + ' ' + fmt(s.policy[s.policy.length - 1][1], 2) + '%'));
+    }
     c.appendChild(el('div', 'meta' + (s.stale ? ' stale' : ''),
                      s.as_of + (s.note ? ' · ' + s.note : '') + (s.stale ? ' · 갱신 실패(이전 값)' : '')));
     var open = function () { listScroll = window.scrollY || 0; location.hash = s.id; };
@@ -229,32 +319,30 @@
     c.addEventListener('keydown', function (e) { if (e.key === 'Enter') open(); });
     return c;
   }
-  function quick(s) {
+  function quick(s) {   // 1년 등락과 52주 고점 대비
     var pts = s.points || [];
-    if (pts.length < 2) return { m: null, ma: null };
-    var c = cfg(s), mm = model(s, c), last = pts.length - 1;
-    var m8 = (mm.closes[last] / mm.closes[mm.start] - 1) * 100;
-    var i20 = mm.mas.indexOf(20), ma = null;
-    if (i20 >= 0 && mm.ma[i20][last] != null) ma = (mm.closes[last] / mm.ma[i20][last] - 1) * 100;
-    return { m: m8, ma: ma };
+    if (pts.length < 2) return { m: null, hi: null };
+    var mm = model(s, cfg(s)), last = pts.length - 1;
+    return { m: (mm.closes[last] / mm.closes[mm.start] - 1) * 100, hi: high52(s) };
   }
-  function pctCell(v, cls) {
+  function pctCell(v) {
     return el('td', v == null ? '' : dirOf(v), v == null ? '—' : signed(v, 2) + '%');
   }
-  function sectorTable(g, list) {
+  function groupTable(g, list) {
     var d = el('details', 'sector');
-    d.open = sectorOpen;
-    d.addEventListener('toggle', function () { sectorOpen = d.open; });
+    if (openState[g] == null) openState[g] = list[0].view === 'table_open';
+    d.open = openState[g];
+    d.addEventListener('toggle', function () { openState[g] = d.open; });
     d.appendChild(el('summary', null, g + ' (' + list.length + ')'));
     var tb = el('table', 'tbl'), hr = el('tr');
-    ['이름', '등락률', '8개월', '20일선 대비'].forEach(function (h) { hr.appendChild(el('th', null, h)); });
+    ['이름', '등락률', '1년', '52주 고점 대비'].forEach(function (x) { hr.appendChild(el('th', null, x)); });
     tb.appendChild(hr);
     list.forEach(function (s) {
       var tr = el('tr', 'row'), q = quick(s), nm = el('td', 'nm', s.label);
-      if (s.last != null) nm.appendChild(el('small', null, fmt(s.last, s.decimals) + (s.stale ? ' · 갱신 실패' : '')));
+      if (s.last != null) nm.appendChild(el('small', null, fmt(s.last, s.decimals) + (s.unit && s.unit !== '$' ? s.unit : '') + (s.stale ? ' · 갱신 실패' : '')));
       tr.appendChild(nm);
       tr.appendChild(s.change_pct != null ? el('td', dirOf(s.change_pct), signed(s.change_pct, 2) + '%') : el('td', null, '—'));
-      tr.appendChild(pctCell(q.m)); tr.appendChild(pctCell(q.ma));
+      tr.appendChild(pctCell(q.m)); tr.appendChild(pctCell(q.hi));
       tr.addEventListener('click', function () { listScroll = window.scrollY || 0; location.hash = s.id; });
       tb.appendChild(tr);
     });
@@ -270,8 +358,8 @@
       byGroup[s.group].push(s);
     });
     groups.forEach(function (g) {
-      if (byGroup[g].every(function (s) { return s.view === 'table'; })) {
-        root.appendChild(sectorTable(g, byGroup[g]));
+      if (byGroup[g].every(function (s) { return s.view === 'table' || s.view === 'table_open'; })) {
+        root.appendChild(groupTable(g, byGroup[g]));
         return;
       }
       root.appendChild(el('h2', null, g));
@@ -280,8 +368,10 @@
       root.appendChild(grid);
     });
     updateStamp();
-    var problems = DATA.series.filter(function (s) { return s.error; }).map(function (s) {
-      return s.label + '(' + String(s.error).slice(0, 70) + ')';
+    showQuote(false);
+    var problems = DATA.series.filter(function (s) { return s.error || s.policy_error; }).map(function (s) {
+      return s.error ? s.label + '(' + String(s.error).slice(0, 70) + ')'
+                     : s.label + ' 기준금리(' + String(s.policy_error).slice(0, 60) + ')';
     });
     var ageH = (Date.now() - new Date(DATA.generated_at).getTime()) / 36e5, msgs = [];
     if (problems.length) msgs.push('수집 실패: ' + problems.join(', '));
@@ -324,112 +414,253 @@
              start: startIdx, t0: tms(pts[startIdx][0]), t1: endT };
   }
 
-  function drawChart(s, m, onPick, candle) {
+  function spanLabel(mo) { return mo === 12 ? '1년' : mo + '개월'; }
+
+  /* 차트: 보이는 구간(vw.v0~v1, 시간 ms)만 그리고, 끌기/확대축소/길게 누르기를 처리한다. */
+  function mountChart(s, m, candle, vw, onPick) {
     var host = document.getElementById('chart');
-    host.replaceChildren();
-    var W = host.clientWidth || 340, H = 280, L = 6, R = 44, T = 8, B = 22;
-    var pw = W - L - R, ph = H - T - B;
-    var svg = svgEl('svg', { width: W, height: H, viewBox: '0 0 ' + W + ' ' + H });
+    var W, H = 280, L = 6, R = 44, T = 8, B = 22, pw, ph, ctx = {};
+    var ptrs = {}, g = null, lp = null, raf = 0, crossActive = false;
 
-    var lo = Infinity, hi = -Infinity, i, k;
-    for (i = m.start; i < m.pts.length; i++) {
-      var cand = candle ? [m.highs[i], m.lows[i]] : [m.closes[i]];
-      for (k = 0; k < m.ma.length; k++) if (m.ma[k][i] != null) cand.push(m.ma[k][i]);
-      cand.forEach(function (x) { if (x < lo) lo = x; if (x > hi) hi = x; });
+    function clampView(v0, v1) {
+      var full = m.t1 - m.t0, span = Math.min(Math.max(v1 - v0, Math.min(MIN_SPAN, full)), full);
+      if (v0 < m.t0) v0 = m.t0;
+      v1 = v0 + span;
+      if (v1 > m.t1) { v1 = m.t1; v0 = v1 - span; }
+      vw.v0 = v0; vw.v1 = v1;
     }
-    var pad = (hi - lo || Math.abs(hi) * 0.01 || 1) * 0.06;
-    lo -= pad; hi += pad;
-    var nt = niceTicks(lo, hi, 4);
-    var tdec = nt.step >= 1 ? 0 : nt.step >= 0.1 ? 1 : nt.step >= 0.01 ? 2 : 3;
-    var span = m.t1 - m.t0 || 1;
-    function X(t) { return L + ((t - m.t0) / span) * pw; }
-    function Y(val) { return T + (1 - (val - lo) / (hi - lo)) * ph; }
+    function range() {
+      var ia = null, ib = null, j;
+      for (j = m.start; j < m.pts.length; j++) {
+        var t = tms(m.pts[j][0]);
+        if (ia === null && t >= vw.v0) ia = j;
+        if (t <= vw.v1) ib = j;
+      }
+      if (ia === null) ia = m.pts.length - 1;
+      if (ib === null || ib < ia) ib = ia;
+      return [ia, ib];
+    }
 
-    nt.ticks.forEach(function (tv) {
-      var y = Y(tv);
-      svg.appendChild(svgEl('line', { x1: L, x2: L + pw, y1: y, y2: y, 'class': 'gridline' }));
-      var lab = svgEl('text', { x: W - R + 4, y: y + 3, 'class': 'axis' });
-      lab.textContent = fmt(tv, tdec);
-      svg.appendChild(lab);
-    });
-    var lastMonth = null;
-    for (i = m.start; i < m.pts.length; i++) {
-      var mo = m.pts[i][0].slice(0, 7);
-      if (mo !== lastMonth) {
-        lastMonth = mo;
-        var x = X(tms(m.pts[i][0]));
-        if (x > L + 8 && x < L + pw - 8) {
-          var xl = svgEl('text', { x: x, y: H - 6, 'text-anchor': 'middle', 'class': 'axis' });
-          xl.textContent = (+mo.slice(5)) + '월';
-          svg.appendChild(xl);
+    function draw() {
+      host.replaceChildren();
+      W = host.clientWidth || 340; pw = W - L - R; ph = H - T - B;
+      var svg = svgEl('svg', { width: W, height: H, viewBox: '0 0 ' + W + ' ' + H });
+      var r = range(), ia = r[0], ib = r[1], i, k, span = vw.v1 - vw.v0 || 1;
+      var lo = Infinity, hi = -Infinity;
+      function take(x) { if (x != null) { if (x < lo) lo = x; if (x > hi) hi = x; } }
+      for (i = ia; i <= ib; i++) {
+        if (candle) { take(m.highs[i]); take(m.lows[i]); } else take(m.closes[i]);
+        for (k = 0; k < m.ma.length; k++) take(m.ma[k][i]);
+        if (s.policy) take(polAt(s.policy, m.pts[i][0]));
+      }
+      var pad = (hi - lo || Math.abs(hi) * 0.01 || 1) * 0.06;
+      lo -= pad; hi += pad;
+      var nt = niceTicks(lo, hi, 4);
+      var tdec = nt.step >= 1 ? 0 : nt.step >= 0.1 ? 1 : nt.step >= 0.01 ? 2 : 3;
+      function X(t) { return L + ((t - vw.v0) / span) * pw; }
+      function Y(val) { return T + (1 - (val - lo) / (hi - lo)) * ph; }
+      ctx.X = X; ctx.Y = Y;
+
+      nt.ticks.forEach(function (tv) {
+        var y = Y(tv);
+        svg.appendChild(svgEl('line', { x1: L, x2: L + pw, y1: y, y2: y, 'class': 'gridline' }));
+        var lab = svgEl('text', { x: W - R + 4, y: y + 3, 'class': 'axis' });
+        lab.textContent = fmt(tv, tdec);
+        svg.appendChild(lab);
+      });
+      // x축 라벨: 넓게 볼 때는 월, 확대하면 월/일
+      var spanDays = span / 864e5;
+      if (spanDays > 100) {
+        var lastMonth = null;
+        for (i = ia; i <= ib; i++) {
+          var mo = m.pts[i][0].slice(0, 7);
+          if (mo !== lastMonth) {
+            lastMonth = mo;
+            var x = X(tms(m.pts[i][0]));
+            if (x > L + 10 && x < L + pw - 10) {
+              var xl = svgEl('text', { x: x, y: H - 6, 'text-anchor': 'middle', 'class': 'axis' });
+              xl.textContent = (+mo.slice(5) === 1 ? mo.slice(2, 4) + '.' : '') + (+mo.slice(5)) + '월';
+              svg.appendChild(xl);
+            }
+          }
+        }
+      } else {
+        for (k = 0; k < 5; k++) {
+          var tt = vw.v0 + span * (k + 0.5) / 5, dd = new Date(tt);
+          var xl2 = svgEl('text', { x: X(tt), y: H - 6, 'text-anchor': 'middle', 'class': 'axis' });
+          xl2.textContent = (dd.getUTCMonth() + 1) + '/' + dd.getUTCDate();
+          svg.appendChild(xl2);
         }
       }
-    }
-    function pathOf(arr) {
-      var d = '', started = false;
-      for (var j = m.start; j < m.pts.length; j++) {
-        if (arr[j] == null) continue;
-        d += (started ? 'L' : 'M') + X(tms(m.pts[j][0])).toFixed(1) + ' ' + Y(arr[j]).toFixed(1);
-        started = true;
-      }
-      return d;
-    }
-    if (candle) {
-      var cw = Math.max(1, Math.min(9, pw / (m.pts.length - m.start) * 0.65));
-      for (i = m.start; i < m.pts.length; i++) {
-        var o = m.opens[i], cl = m.closes[i], cx0 = X(tms(m.pts[i][0]));
-        var cls = cl > o ? 'cd-up' : cl < o ? 'cd-down' : 'cd-flat';
-        svg.appendChild(svgEl('line', { x1: cx0, x2: cx0, y1: Y(m.highs[i]), y2: Y(m.lows[i]), 'class': cls, 'stroke-width': 1 }));
-        var yt = Y(Math.max(o, cl)), yb = Y(Math.min(o, cl));
-        svg.appendChild(svgEl('rect', { x: cx0 - cw / 2, y: yt, width: cw, height: Math.max(1, yb - yt), 'class': cls, 'stroke-width': 0 }));
-      }
-    }
-    m.ma.map(function (_, idx) { return idx; }).reverse().forEach(function (idx) {
-      var d = pathOf(m.ma[idx]);
-      if (d) svg.appendChild(svgEl('path', { d: d, 'class': 'l-ma l-ma' + idx }));
-    });
-    if (!candle) svg.appendChild(svgEl('path', { d: pathOf(m.closes), 'class': 'l-price' }));
 
-    var cross = svgEl('line', { y1: T, y2: T + ph, 'class': 'cross', visibility: 'hidden' });
-    var dot = svgEl('circle', { r: 3.5, 'class': 'dot', visibility: 'hidden' });
-    svg.appendChild(cross); svg.appendChild(dot);
+      var clipId = 'clip' + Math.floor(Math.random() * 1e6);
+      var defs = svgEl('defs', {}), cp = svgEl('clipPath', { id: clipId });
+      cp.appendChild(svgEl('rect', { x: L, y: T, width: pw, height: ph }));
+      defs.appendChild(cp); svg.appendChild(defs);
+      var gp = svgEl('g', { 'clip-path': 'url(#' + clipId + ')' });
+      svg.appendChild(gp);
+
+      function pathOf(arr) {
+        var d = '', started = false;
+        for (var j = Math.max(m.start, ia - 1); j <= Math.min(m.pts.length - 1, ib + 1); j++) {
+          if (arr[j] == null) continue;
+          d += (started ? 'L' : 'M') + X(tms(m.pts[j][0])).toFixed(1) + ' ' + Y(arr[j]).toFixed(1);
+          started = true;
+        }
+        return d;
+      }
+      if (candle) {
+        var cw = Math.max(1, Math.min(12, pw / (ib - ia + 1) * 0.65));
+        for (i = ia; i <= ib; i++) {
+          var o = m.opens[i], cl = m.closes[i], cx0 = X(tms(m.pts[i][0]));
+          var cls = cl > o ? 'cd-up' : cl < o ? 'cd-down' : 'cd-flat';
+          gp.appendChild(svgEl('line', { x1: cx0, x2: cx0, y1: Y(m.highs[i]), y2: Y(m.lows[i]), 'class': cls, 'stroke-width': 1 }));
+          var yt = Y(Math.max(o, cl)), yb = Y(Math.min(o, cl));
+          gp.appendChild(svgEl('rect', { x: cx0 - cw / 2, y: yt, width: cw, height: Math.max(1, yb - yt), 'class': cls, 'stroke-width': 0 }));
+        }
+      }
+      if (s.policy && s.policy.length) {   // 기준금리: 계단형 점선
+        var pv = polAt(s.policy, m.pts[ia][0]), pts2 = [];
+        if (pv != null) pts2.push([vw.v0, pv]);
+        s.policy.forEach(function (c) {
+          var tc = tms(c[0]);
+          if (tc > vw.v0 && tc <= vw.v1) { if (pv != null) pts2.push([tc, pv]); pts2.push([tc, c[1]]); }
+          if (tc <= vw.v1) pv = c[1];
+        });
+        if (pv != null) pts2.push([vw.v1, pv]);
+        if (pts2.length > 1) {
+          gp.appendChild(svgEl('path', { d: pts2.map(function (q, n) {
+            return (n ? 'L' : 'M') + X(q[0]).toFixed(1) + ' ' + Y(q[1]).toFixed(1); }).join(' '), 'class': 'l-pol' }));
+        }
+      }
+      m.ma.map(function (_, idx) { return idx; }).reverse().forEach(function (idx) {
+        var d = pathOf(m.ma[idx]);
+        if (d) gp.appendChild(svgEl('path', { d: d, 'class': 'l-ma l-ma' + idx }));
+      });
+      if (!candle) gp.appendChild(svgEl('path', { d: pathOf(m.closes), 'class': 'l-price' }));
+
+      ctx.cross = svgEl('line', { y1: T, y2: T + ph, 'class': 'cross', visibility: 'hidden' });
+      ctx.dot = svgEl('circle', { r: 3.5, 'class': 'dot', visibility: 'hidden' });
+      svg.appendChild(ctx.cross); svg.appendChild(ctx.dot);
+      host.appendChild(svg);
+      ctx.ia = ia; ctx.ib = ib;
+      crossActive = false;
+      onPick(ib);
+    }
 
     function pick(clientX) {
-      var rect = host.getBoundingClientRect();
-      var t = m.t0 + ((clientX - rect.left - L) / pw) * span, best = m.start, bd = Infinity;
-      for (var j = m.start; j < m.pts.length; j++) {
+      var rect = host.getBoundingClientRect(), span = vw.v1 - vw.v0 || 1;
+      var t = vw.v0 + ((clientX - rect.left - L) / pw) * span, best = ctx.ia, bd = Infinity;
+      for (var j = ctx.ia; j <= ctx.ib; j++) {
         var dd = Math.abs(tms(m.pts[j][0]) - t);
         if (dd < bd) { bd = dd; best = j; }
       }
-      var cx = X(tms(m.pts[best][0]));
-      cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.setAttribute('visibility', 'visible');
-      dot.setAttribute('cx', cx); dot.setAttribute('cy', Y(m.closes[best])); dot.setAttribute('visibility', candle ? 'hidden' : 'visible');
+      var cx = ctx.X(tms(m.pts[best][0]));
+      ctx.cross.setAttribute('x1', cx); ctx.cross.setAttribute('x2', cx); ctx.cross.setAttribute('visibility', 'visible');
+      if (!candle) {
+        ctx.dot.setAttribute('cx', cx); ctx.dot.setAttribute('cy', ctx.Y(m.closes[best])); ctx.dot.setAttribute('visibility', 'visible');
+      }
+      crossActive = true;
       onPick(best);
     }
-    function reset() {
-      cross.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden');
-      onPick(m.pts.length - 1);
+    function redrawSoon() {
+      if (raf) return;
+      raf = (window.requestAnimationFrame || function (f) { return setTimeout(f, 16); })(function () { raf = 0; draw(); });
     }
-    svg.addEventListener('pointerdown', function (e) { pick(e.clientX); });
-    svg.addEventListener('pointermove', function (e) { pick(e.clientX); });
-    svg.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') reset(); });
-    host.appendChild(svg);
+    function zoom(factor, centerT) {
+      var c = centerT == null ? (vw.v0 + vw.v1) / 2 : centerT;
+      clampView(c - (c - vw.v0) * factor, c + (vw.v1 - c) * factor);
+      draw();
+    }
+    function preset(months) {
+      var d = new Date(m.t1); d.setUTCMonth(d.getUTCMonth() - months);
+      clampView(Math.max(m.t0, d.getTime()), m.t1);
+      draw();
+    }
+    function ptrList() { return Object.keys(ptrs).map(function (k) { return ptrs[k]; }); }
+
+    host.onpointerdown = function (e) {
+      ptrs[e.pointerId] = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY };
+      var list = ptrList();
+      clearTimeout(lp);
+      if (list.length >= 2) {
+        g = { type: 'pinch', d0: Math.abs(list[0].x - list[1].x) || 1, v0: vw.v0, v1: vw.v1,
+              cf: ((list[0].x + list[1].x) / 2 - host.getBoundingClientRect().left - L) / pw };
+        return;
+      }
+      g = { type: 'wait', id: e.pointerId };
+      if (e.pointerType !== 'mouse') {
+        lp = setTimeout(function () {
+          if (g && g.type === 'wait' && ptrs[g.id]) { g.type = 'cross'; pick(ptrs[g.id].x); }
+        }, 450);
+      }
+    };
+    host.onpointermove = function (e) {
+      var p = ptrs[e.pointerId];
+      if (!p) { if (e.pointerType === 'mouse' && !g) pick(e.clientX); return; }
+      var prevX = p.x; p.x = e.clientX; p.y = e.clientY;
+      if (!g) return;
+      if (g.type === 'pinch') {
+        var list = ptrList();
+        if (list.length < 2) return;
+        var dist = Math.abs(list[0].x - list[1].x) || 1, span0 = g.v1 - g.v0;
+        var ns = span0 * g.d0 / dist, ct = g.v0 + span0 * g.cf;
+        clampView(ct - ns * g.cf, ct + ns * (1 - g.cf));
+        redrawSoon();
+      } else if (g.type === 'wait') {
+        var dx = p.x - p.x0, dy = p.y - p.y0;
+        if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) {
+          clearTimeout(lp); g.type = 'pan';
+          if (host.setPointerCapture) try { host.setPointerCapture(e.pointerId); } catch (x) {}
+        } else if (Math.abs(dy) > 8) { clearTimeout(lp); g.type = 'none'; }
+      }
+      if (g.type === 'pan') {
+        var span = vw.v1 - vw.v0, dt = -((e.clientX - prevX) / pw) * span;
+        clampView(vw.v0 + dt, vw.v1 + dt);
+        redrawSoon();
+      } else if (g.type === 'cross') pick(e.clientX);
+    };
+    function up(e, cancelled) {
+      clearTimeout(lp);
+      var p = ptrs[e.pointerId];
+      if (g && g.type === 'wait' && p && !cancelled) pick(p.x);   // 짧게 누르면 그 날짜 값
+      delete ptrs[e.pointerId];
+      var left = ptrList().length;
+      if (left === 0) g = null;
+      else if (left === 1) g = { type: 'none' };
+    }
+    host.onpointerup = function (e) { up(e, false); };
+    host.onpointercancel = function (e) { up(e, true); };
+    host.onpointerleave = function (e) {
+      if (e.pointerType === 'mouse' && crossActive && !ptrs[e.pointerId]) { ctx.cross.setAttribute('visibility', 'hidden'); ctx.dot.setAttribute('visibility', 'hidden'); onPick(ctx.ib); crossActive = false; }
+    };
+    if (host._wheel && host.removeEventListener) host.removeEventListener('wheel', host._wheel);
+    host._wheel = function (e) {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      var rect = host.getBoundingClientRect(), span = vw.v1 - vw.v0;
+      zoom(e.deltaY > 0 ? 1.15 : 1 / 1.15, vw.v0 + ((e.clientX - rect.left - L) / pw) * span);
+    };
+    if (host.addEventListener) host.addEventListener('wheel', host._wheel, { passive: false });
+
+    return { draw: draw, zoom: zoom, preset: preset };
   }
 
-  function buildReadout(mas, candle) {
+  function buildReadout(mas, candle, hasPol) {
     var box = document.getElementById('readout');
     box.replaceChildren();
-    box.style.gridTemplateColumns = 'repeat(' + (candle ? 4 : mas.length + 1) + ', 1fr)';
+    box.style.gridTemplateColumns = 'repeat(' + (candle ? 4 : mas.length + 1 + (hasPol ? 1 : 0)) + ', 1fr)';
     var refs = { date: el('div', 'date') };
     box.appendChild(refs.date);
-    (candle ? [['open', '시', 'var(--fg)'], ['high', '고', 'var(--fg)'], ['low', '저', 'var(--fg)'], ['close', '종', 'var(--fg)']]
-            : [['close', '종가', 'var(--fg)']]).concat(mas.map(function (n, i) {
+    var cells = (candle ? [['open', '시', 'var(--fg)'], ['high', '고', 'var(--fg)'], ['low', '저', 'var(--fg)'], ['close', '종', 'var(--fg)']]
+                        : [['close', '종가', 'var(--fg)']]).concat(mas.map(function (n, i) {
       return ['ma' + i, n + '일', 'var(--ma' + i + ')'];
-    })).forEach(function (r) {
-      var c = el('div', 'ro'), k = el('div', 'k'), sw = el('i');
-      sw.style.background = r[0].indexOf('ma') === 0 ? r[2] : 'transparent';
-      if (r[0].indexOf('ma') !== 0) sw.style.display = 'none';
-      k.appendChild(sw); k.appendChild(document.createTextNode(r[1]));
+    }));
+    if (hasPol) cells.push(['pol', '기준금리', 'var(--fg)']);
+    cells.forEach(function (r) {
+      var c = el('div', 'ro'), k = el('div', 'k'), isMa = r[0].indexOf('ma') === 0;
+      if (isMa) { var sw = el('i'); sw.style.background = r[2]; k.appendChild(sw); }
+      k.appendChild(document.createTextNode(r[1]));
       refs[r[0]] = el('div', 'v', '—');
       c.appendChild(k); c.appendChild(refs[r[0]]);
       box.appendChild(c);
@@ -453,26 +684,32 @@
       if (HV[i] > HV[hiI]) hiI = i;
       if (LV[i] < LV[loI]) loI = i;
     }
-    var first = m.closes[m.start], cur = m.closes[last];
+    var first = m.closes[m.start], cur = m.closes[last], sl = spanLabel(m.months);
     var u = s.unit === '%' ? '%' : '';
-    box.appendChild(stat(m.months + '개월 최고', fmt(HV[hiI], dec) + u + ' (' + md(m.pts[hiI][0]) + ')'));
-    box.appendChild(stat(m.months + '개월 최저', fmt(LV[loI], dec) + u + ' (' + md(m.pts[loI][0]) + ')'));
+    box.appendChild(stat(sl + ' 최고', fmt(HV[hiI], dec) + u + ' (' + md(m.pts[hiI][0]) + ')'));
+    box.appendChild(stat(sl + ' 최저', fmt(LV[loI], dec) + u + ' (' + md(m.pts[loI][0]) + ')'));
     var chg = bp ? (cur - first) * 100 : (cur / first - 1) * 100;
-    box.appendChild(stat(m.months + '개월 등락 (' + md(m.pts[m.start][0]) + '~)',
+    box.appendChild(stat(sl + ' 등락 (' + md(m.pts[m.start][0]) + '~)',
                          signed(chg, bp ? 1 : 2) + (bp ? 'bp' : '%'), dirOf(chg)));
+    var hl = (m.months === 12 ? '52주' : m.months + '개월') + ' 고점 대비';
     if (!bp) {
       var dd = (cur / HV[hiI] - 1) * 100;
-      box.appendChild(stat('고점 대비', signed(dd, 2) + '%', dirOf(dd)));
+      box.appendChild(stat(hl, signed(dd, 2) + '%', dirOf(dd)));
     } else {
-      box.appendChild(stat('고점 대비', signed((cur - HV[hiI]) * 100, 1) + 'bp', dirOf(cur - HV[hiI])));
+      box.appendChild(stat(hl, signed((cur - HV[hiI]) * 100, 1) + 'bp', dirOf(cur - HV[hiI])));
+    }
+    if (s.policy && s.policy.length) {
+      var pn = s.policy[s.policy.length - 1][1];
+      box.appendChild(stat((s.policy_label || '기준금리') + ' 대비 스프레드',
+                           signed((cur - pn) * 100, 0) + 'bp (기준 ' + fmt(pn, 2) + '%)', dirOf(cur - pn), true));
     }
     var parts = [], vals = [], ok = true;
     m.mas.forEach(function (n, idx) {
       var mv = m.ma[idx][last];
       vals.push(mv);
       if (mv == null) { ok = false; parts.push(n + '일선 —'); return; }
-      var g = bp ? (cur - mv) * 100 : (cur / mv - 1) * 100;
-      parts.push(n + '일선 ' + signed(g, bp ? 1 : 2) + (bp ? 'bp' : '%'));
+      var g2 = bp ? (cur - mv) * 100 : (cur / mv - 1) * 100;
+      parts.push(n + '일선 ' + signed(g2, bp ? 1 : 2) + (bp ? 'bp' : '%'));
     });
     box.appendChild(stat('이동평균선 대비 현재가', parts.join(' · '), null, true));
     var arr = '—';
@@ -484,7 +721,7 @@
     box.appendChild(stat('이동평균 배열', arr, null, true));
   }
 
-  function renderDetail(s) {
+  function renderDetail(s, keepView) {
     var c = cfg(s);
     document.getElementById('d-title').textContent = s.label;
     var dv = document.getElementById('d-val');
@@ -496,41 +733,58 @@
     updateStamp();
     var note = document.getElementById('d-note');
     var chartHost = document.getElementById('chart'), stats = document.getElementById('stats');
+    var zoomBox = document.getElementById('zoom-box');
     if (!s.points || s.points.length < 2) {
       document.getElementById('readout').replaceChildren();
       chartHost.replaceChildren(); stats.replaceChildren();
+      zoomBox.style.display = 'none'; document.getElementById('mode-box').style.display = 'none';
       note.textContent = '이 지표는 아직 차트를 그릴 데이터가 없습니다.' + (s.error ? ' (' + s.error + ')' : '');
+      current = { s: s };
       return;
     }
+    zoomBox.style.display = 'inline-flex';
     var m = model(s, c), canCandle = !!m.opens, modeBox = document.getElementById('mode-box');
     modeBox.style.display = canCandle ? 'block' : 'none';
     var candle = canCandle && MODE === 'candle';
     Array.prototype.forEach.call(modeBox.querySelectorAll('button'), function (b) {
       b.className = (b.getAttribute('data-m') === (candle ? 'candle' : 'line')) ? 'on' : '';
     });
-    var refs = buildReadout(c.mas, candle);
+    var hasPol = !!(s.policy && s.policy.length);
+    var refs = buildReadout(c.mas, candle, hasPol);
     var u = s.unit === '%' ? '%' : '';
     function setReadout(i) {
       refs.date.textContent = m.pts[i][0];
+      refs.close.textContent = fmt(m.closes[i], s.decimals) + u;
       if (candle) {
         refs.open.textContent = fmt(m.opens[i], s.decimals);
         refs.high.textContent = fmt(m.highs[i], s.decimals);
         refs.low.textContent = fmt(m.lows[i], s.decimals);
       }
-      refs.close.textContent = fmt(m.closes[i], s.decimals) + u;
       c.mas.forEach(function (n, idx) {
         var mv = m.ma[idx][i];
         refs['ma' + idx].textContent = mv == null ? '—' : fmt(mv, s.decimals) + u;
       });
+      if (hasPol) { var pv = polAt(s.policy, m.pts[i][0]); refs.pol.textContent = pv == null ? '—' : fmt(pv, 2) + '%'; }
     }
-    function draw() { drawChart(s, m, setReadout, candle); setReadout(m.pts.length - 1); }
-    current = { draw: draw, s: s };
-    draw();
+    var vw;
+    if (keepView && keepView.id === s.id) vw = keepView;
+    else {
+      vw = { id: s.id, v0: m.t0, v1: m.t1 };
+      if (c.months > VIEW_MONTHS) { var d0 = new Date(m.t1); d0.setUTCMonth(d0.getUTCMonth() - VIEW_MONTHS); vw.v0 = Math.max(m.t0, d0.getTime()); }
+    }
+    var ch = mountChart(s, m, candle, vw, setReadout);
+    document.getElementById('z-6').style.display = c.months > VIEW_MONTHS ? '' : 'none';
+    document.getElementById('z-all').style.display = c.months > VIEW_MONTHS ? '' : 'none';
+    document.getElementById('z-all').textContent = spanLabel(c.months);
+    current = { draw: ch.draw, s: s, ch: ch, vw: vw, months: c.months };
+    ch.draw();
     renderStats(s, m);
     var histDays = Math.round((m.t1 - tms(m.pts[0][0])) / 864e5);
     note.textContent = (s.note ? s.note + '. ' : '') +
-      '이동평균은 일별 종가의 단순이동평균(거래일 기준)이며 현재 보관 중인 약 ' + histDays +
-      '일 데이터로 계산합니다.' + (candle ? ' 캔들: 빨강=종가>시가(상승), 파랑=하락, 오늘 캔들은 장중 값입니다.' : '') + ' 차트를 누르거나 좌우로 끌면 날짜별 값을 볼 수 있습니다. 출처: ' + s.source +
+      '이동평균은 일별 종가의 단순이동평균(거래일 기준)이며 현재 보관 중인 약 ' + histDays + '일 데이터로 계산합니다.' +
+      (candle ? ' 캔들: 빨강=종가>시가(상승), 파랑=하락, 오늘 캔들은 장중 값입니다.' : '') +
+      (hasPol ? ' 점선은 ' + (s.policy_label || '기준금리') + '입니다.' : '') +
+      ' 차트는 좌우로 끌어 이동, 두 손가락(또는 ＋/－)으로 확대·축소, 길게 누르면 날짜별 값을 봅니다. 출처: ' + s.source +
       (s.stale ? ' · 최근 갱신 실패로 이전 값 표시 중' : '') + '.';
   }
 
@@ -554,14 +808,19 @@
     b.addEventListener('click', function () {
       MODE = b.getAttribute('data-m');
       try { localStorage.setItem('chartMode', MODE); } catch (e) {}
-      if (current) renderDetail(current.s);
+      if (current && current.s) renderDetail(current.s, current.vw);
     });
   });
+  [['z-6', function () { current.ch.preset(VIEW_MONTHS); }], ['z-all', function () { current.ch.preset(current.months); }],
+   ['z-in', function () { current.ch.zoom(0.6); }], ['z-out', function () { current.ch.zoom(1 / 0.6); }]].forEach(function (z) {
+    document.getElementById(z[0]).addEventListener('click', function () { if (current && current.ch) z[1](); });
+  });
+  document.getElementById('q-btn').addEventListener('click', function () { showQuote(true); });
   window.addEventListener('hashchange', route);
   var rt;
   window.addEventListener('resize', function () {
     clearTimeout(rt);
-    rt = setTimeout(function () { if (current) current.draw(); }, 150);
+    rt = setTimeout(function () { if (current && current.draw) current.draw(); }, 150);
   });
   setInterval(updateStamp, 30000);
 
