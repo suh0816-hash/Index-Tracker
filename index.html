@@ -101,6 +101,7 @@
   .tbl td { font-size: 12.5px; text-align: right; padding: 9px 6px; border-top: 1px solid var(--line); }
   .tbl tr.row { cursor: pointer; -webkit-tap-highlight-color: transparent; }
   .tbl tr.row:active { opacity: .7; }
+  .tbl td small { display: block; font-size: 10px; color: var(--muted); }
   .tbl .nm small { display: block; font-size: 10.5px; color: var(--muted); }
   .note { font-size: 11px; color: var(--muted); line-height: 1.5; margin: 6px 4px 0; }
 </style>
@@ -124,7 +125,7 @@
   <main id="root"></main>
   <footer>지표를 누르면 차트(캔들/선)와 이동평균선을 볼 수 있습니다. 차트는 좌우로 끌어 이동하고 두 손가락으로 확대·축소하며, 길게 누르면 날짜별 값이 보입니다. 캔들은 빨강=상승·파랑=하락이며 오늘 캔들은 장중 값이라 계속 바뀝니다. 미국 섹터는 ‘미국 섹터’를 눌러 펼칩니다. 등락은 직전 관측일 대비이며 주가·환율·원유는 %,
   금리는 bp입니다. 카드의 날짜는 해당 값의 기준일로, 시장별 휴장일이 달라 서로 다를 수 있습니다.
-  수집은 15분 주기이나 장이 닫힌 시장은 건너뜁니다. 출처: Yahoo Finance, 미 재무부(FRED 보조), 한국은행 ECOS. 명언은 코스피 종가가 120일선 위/아래인지에 따라 고릅니다.</footer>
+  수집은 15분 주기이나 장이 닫힌 시장은 건너뜁니다. 52주 줄은 기준 지수(한국 계열=코스피, 미국 계열=S&P 500)가 120일선 위면 저점 대비, 아래면 고점 대비를 보여줍니다. YTD는 전년도 마지막 거래일 종가 대비입니다. 출처: Yahoo Finance, 미 재무부(FRED 보조), 한국은행 ECOS. 명언은 코스피 종가가 120일선 위/아래인지에 따라 고릅니다.</footer>
 </div>
 
 <div id="detail-view">
@@ -145,7 +146,12 @@
 (function () {
   var NS = 'http://www.w3.org/2000/svg';
   var DEF_MA = [20, 60, 120], DEF_MONTHS = 12, VIEW_MONTHS = 6, MIN_SPAN = 21 * 864e5;
-  var HI52 = { kospi: 1, kosdaq: 1, nikkei: 1, nasdaq: 1, spx: 1, ewy: 1, gold: 1, btc: 1 };
+  var HI52 = { kospi: 1, kosdaq: 1, nikkei: 1, nasdaq: 1, spx: 1, djt: 1, ewy: 1, gold: 1, btc: 1 };
+  var RIGHT_PAD = 6 * 864e5;   // 오늘 캔들이 가장자리에 붙지 않도록 차트 오른쪽에 두는 여백
+  // 상승장/하락장 판단에 쓰는 기준 지수: 한국 계열=코스피, 미국 계열=S&P 500, 그 밖(니케이·금·비트코인)은 자기 자신
+  var MARKET = { kospi: 'kospi', kosdaq: 'kospi', samsung: 'kospi', hynix: 'kospi', ewy: 'kospi',
+                 nasdaq: 'spx', spx: 'spx', djt: 'spx', mu: 'spx', sndk: 'spx', tsm: 'spx' };
+  ['xlk','xlf','xle','xlv','xly','xlp','xli','xlb','xlu','xlre','xlc'].forEach(function (k) { MARKET[k] = 'spx'; });
   var STALE_HOURS = 3;       // 이 시간 넘게 수집이 없으면 경고
   var DATA = null, BY_ID = {}, listScroll = 0, current = null, openState = {}, MODE = 'candle';
   try { MODE = localStorage.getItem('chartMode') === 'line' ? 'line' : 'candle'; } catch (e) {}
@@ -259,17 +265,33 @@
     return arrow(s.change) + ' ' + fmt(Math.abs(s.change), s.decimals) +
            (s.change_pct != null ? ' (' + fmt(Math.abs(s.change_pct), 2) + '%)' : '');
   }
-  function high52(s) {   // 최근 365일 장중 고가(없으면 종가) 대비 현재가 위치(%)
+  function isUp(id) {   // 기준 지수 종가가 120일 이동평균 이상이면 true, 판단 불가면 null
+    var s = BY_ID[MARKET[id] || id];
+    if (!s || !s.points || s.points.length < 120) return null;
+    var p = s.points, sum = 0;
+    for (var i = p.length - 120; i < p.length; i++) sum += p[i][1];
+    return p[p.length - 1][1] >= sum / 120;
+  }
+  function extremeGap(s, up) {   // 최근 365일 저점(상승장) 또는 고점(하락장) 대비 위치(%), 장중 저가/고가 기준
     var p = s.points;
     if (!p || p.length < 2 || s.last == null) return null;
-    var cut = tms(p[p.length - 1][0]) - 365 * 864e5, hi = -Infinity;
+    var cut = tms(p[p.length - 1][0]) - 365 * 864e5, ext = up ? Infinity : -Infinity, oh = s.ohlc && s.ohlc.length === p.length;
     for (var i = 0; i < p.length; i++) {
       if (tms(p[i][0]) < cut) continue;
-      var v = (s.ohlc && s.ohlc.length === p.length) ? s.ohlc[i][1] : p[i][1];
-      if (v > hi) hi = v;
+      var v = oh ? s.ohlc[i][up ? 2 : 1] : p[i][1];
+      if (up ? v < ext : v > ext) ext = v;
     }
-    return (hi > 0 && isFinite(hi)) ? (s.last / hi - 1) * 100 : null;
+    return (ext > 0 && isFinite(ext)) ? (s.last / ext - 1) * 100 : null;
   }
+  function ytd(s) {   // 전년도 마지막 거래일 종가 대비 (금리는 bp)
+    var p = s.points;
+    if (!p || p.length < 2 || s.last == null) return null;
+    var y = p[p.length - 1][0].slice(0, 4), base = null;
+    for (var i = p.length - 1; i >= 0; i--) { if (p[i][0].slice(0, 4) < y) { base = p[i][1]; break; } }
+    if (base == null || !base) return null;
+    return s.kind === 'bp' ? (s.last - base) * 100 : (s.last / base - 1) * 100;
+  }
+  function ytdText(s) { var v = ytd(s); return v == null ? null : signed(v, s.kind === 'bp' ? 1 : 2) + (s.kind === 'bp' ? 'bp' : '%'); }
   function polAt(pol, dateStr) {   // 날짜 기준 적용 중인 기준금리(변경 이력 중 직전 값)
     var v = null;
     if (!pol) return null;
@@ -295,9 +317,11 @@
     var dir = s.change != null ? dirOf(s.change) : 'flat';
     c.appendChild(el('div', 'chg ' + dir, changeText(s)));
     if (s.points && s.points.length > 1) c.appendChild(spark(s.points.slice(-60), dir));
+    var yt = ytdText(s);
+    if (yt) c.appendChild(el('div', 'meta', 'YTD ' + yt));
     if (HI52[s.id]) {
-      var g52 = high52(s);
-      if (g52 != null) c.appendChild(el('div', 'meta', '52주 고점 대비 ' + signed(g52, 1) + '%'));
+      var upc = isUp(s.id) === true, g52 = extremeGap(s, upc);
+      if (g52 != null) c.appendChild(el('div', 'meta', (upc ? '52주 저점 대비 ' : '52주 고점 대비 ') + signed(g52, 1) + '%'));
     }
     if (s.policy && s.policy.length) {
       c.appendChild(el('div', 'meta', (s.policy_label || '기준금리') + ' ' + fmt(s.policy[s.policy.length - 1][1], 2) + '%'));
@@ -309,14 +333,16 @@
     c.addEventListener('keydown', function (e) { if (e.key === 'Enter') open(); });
     return c;
   }
-  function quick(s) {   // 1년 등락과 52주 고점 대비
+  function quick(s) {   // 1년 등락, 그리고 시장 상황에 맞는 52주 저점/고점 대비
     var pts = s.points || [];
-    if (pts.length < 2) return { m: null, hi: null };
-    var mm = model(s, cfg(s)), last = pts.length - 1;
-    return { m: (mm.closes[last] / mm.closes[mm.start] - 1) * 100, hi: high52(s) };
+    if (pts.length < 2) return { m: null, ext: null, up: false };
+    var mm = model(s, cfg(s)), last = pts.length - 1, up = isUp(s.id) === true;
+    return { m: (mm.closes[last] / mm.closes[mm.start] - 1) * 100, ext: extremeGap(s, up), up: up };
   }
-  function pctCell(v) {
-    return el('td', v == null ? '' : dirOf(v), v == null ? '—' : signed(v, 2) + '%');
+  function pctCell(v, sub) {
+    var td = el('td', v == null ? '' : dirOf(v), v == null ? '—' : signed(v, 2) + '%');
+    if (sub && v != null) td.appendChild(el('small', null, sub));
+    return td;
   }
   function groupTable(g, list) {
     var d = el('details', 'sector');
@@ -324,15 +350,20 @@
     d.open = openState[g];
     d.addEventListener('toggle', function () { openState[g] = d.open; });
     d.appendChild(el('summary', null, g + ' (' + list.length + ')'));
+    var qs = list.map(quick), ups = qs.filter(function (q) { return q.up; }).length;
+    var mixed = ups > 0 && ups < qs.length;
+    var extHead = mixed ? '52주 고·저점 대비' : (ups ? '52주 저점 대비' : '52주 고점 대비');
     var tb = el('table', 'tbl'), hr = el('tr');
-    ['이름', '등락률', '1년', '52주 고점 대비'].forEach(function (x) { hr.appendChild(el('th', null, x)); });
+    ['이름', '등락률', 'YTD', '1년', extHead].forEach(function (x) { hr.appendChild(el('th', null, x)); });
     tb.appendChild(hr);
-    list.forEach(function (s) {
-      var tr = el('tr', 'row'), q = quick(s), nm = el('td', 'nm', s.label);
+    list.forEach(function (s, i) {
+      var tr = el('tr', 'row'), q = qs[i], nm = el('td', 'nm', s.label), yv = ytd(s);
       if (s.last != null) nm.appendChild(el('small', null, fmt(s.last, s.decimals) + (s.unit && s.unit !== '$' ? s.unit : '') + (s.stale ? ' · 갱신 실패' : '')));
       tr.appendChild(nm);
       tr.appendChild(s.change_pct != null ? el('td', dirOf(s.change_pct), signed(s.change_pct, 2) + '%') : el('td', null, '—'));
-      tr.appendChild(pctCell(q.m)); tr.appendChild(pctCell(q.hi));
+      tr.appendChild(pctCell(yv));
+      tr.appendChild(pctCell(q.m));
+      tr.appendChild(pctCell(q.ext, mixed ? (q.up ? '저점' : '고점') : null));
       tr.addEventListener('click', function () { listScroll = window.scrollY || 0; location.hash = s.id; });
       tb.appendChild(tr);
     });
@@ -413,10 +444,10 @@
     var ptrs = {}, g = null, lp = null, raf = 0, crossActive = false;
 
     function clampView(v0, v1) {
-      var full = m.t1 - m.t0, span = Math.min(Math.max(v1 - v0, Math.min(MIN_SPAN, full)), full);
+      var tMax = m.t1 + RIGHT_PAD, full = tMax - m.t0, span = Math.min(Math.max(v1 - v0, Math.min(MIN_SPAN, full)), full);
       if (v0 < m.t0) v0 = m.t0;
       v1 = v0 + span;
-      if (v1 > m.t1) { v1 = m.t1; v0 = v1 - span; }
+      if (v1 > tMax) { v1 = tMax; v0 = v1 - span; }
       vw.v0 = v0; vw.v1 = v1;
     }
     function range() {
@@ -500,7 +531,7 @@
         return d;
       }
       if (candle) {
-        var cw = Math.max(1, Math.min(12, pw / (ib - ia + 1) * 0.65));
+        var cw = Math.max(1.4, Math.min(12, pw / (ib - ia + 1) * 0.65));
         for (i = ia; i <= ib; i++) {
           var o = m.opens[i], cl = m.closes[i], cx0 = X(tms(m.pts[i][0]));
           var cls = cl > o ? 'cd-up' : cl < o ? 'cd-down' : 'cd-flat';
@@ -564,7 +595,7 @@
     }
     function preset(months) {
       var d = new Date(m.t1); d.setUTCMonth(d.getUTCMonth() - months);
-      clampView(Math.max(m.t0, d.getTime()), m.t1);
+      clampView(Math.max(m.t0, d.getTime()), m.t1 + RIGHT_PAD);
       draw();
     }
     function ptrList() { return Object.keys(ptrs).map(function (k) { return ptrs[k]; }); }
@@ -681,6 +712,8 @@
     var chg = bp ? (cur - first) * 100 : (cur / first - 1) * 100;
     box.appendChild(stat(sl + ' 등락 (' + md(m.pts[m.start][0]) + '~)',
                          signed(chg, bp ? 1 : 2) + (bp ? 'bp' : '%'), dirOf(chg)));
+    var ytv = ytdText(s);
+    if (ytv) box.appendChild(stat('연초 대비 (YTD)', ytv, dirOf(ytd(s))));
     var hl = (m.months === 12 ? '52주' : m.months + '개월') + ' 고점 대비';
     if (!bp) {
       var dd = (cur / HV[hiI] - 1) * 100;
@@ -759,7 +792,7 @@
     var vw;
     if (keepView && keepView.id === s.id) vw = keepView;
     else {
-      vw = { id: s.id, v0: m.t0, v1: m.t1 };
+      vw = { id: s.id, v0: m.t0, v1: m.t1 + RIGHT_PAD };
       if (c.months > VIEW_MONTHS) { var d0 = new Date(m.t1); d0.setUTCMonth(d0.getUTCMonth() - VIEW_MONTHS); vw.v0 = Math.max(m.t0, d0.getTime()); }
     }
     var ch = mountChart(s, m, candle, vw, setReadout);
