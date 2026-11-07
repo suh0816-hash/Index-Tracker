@@ -11,21 +11,22 @@
     --up: #d92d20;   /* 상승: 빨강 (한국식) */
     --down: #1d6fe0; /* 하락: 파랑 */
     --flat: #6b7280; --warn: #b45309;
-    --ma20: #d97706; --ma60: #059669; --ma120: #7c3aed;
+    --ma0: #d97706; --ma1: #059669; --ma2: #7c3aed;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #0f1115; --card: #181b21; --fg: #eef0f3; --muted: #9aa1ad;
             --line: #272b33; --up: #ff6b5e; --down: #5aa2ff; --flat: #9aa1ad; --warn: #f5a524;
-            --ma20: #fbbf24; --ma60: #34d399; --ma120: #a78bfa; }
+            --ma0: #fbbf24; --ma1: #34d399; --ma2: #a78bfa; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg);
          font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
          padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
                   max(24px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
-  header { display: flex; justify-content: space-between; align-items: baseline; margin: 4px 4px 12px; }
-  h1 { font-size: 18px; margin: 0; }
-  #updated { font-size: 12px; color: var(--muted); }
+  header { margin: 4px 4px 12px; }
+  h1 { font-size: 20px; margin: 0; }
+  .tagline { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .stamp { font-size: 12px; color: var(--muted); margin-top: 8px; }
   h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 18px 4px 8px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px;
@@ -40,7 +41,7 @@
   .meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
   .stale { color: var(--warn); }
   #banner { display: none; background: var(--card); border: 1px solid var(--warn); color: var(--warn);
-            border-radius: 12px; padding: 10px 12px; font-size: 13px; margin-bottom: 10px; }
+            border-radius: 12px; padding: 10px 12px; font-size: 13px; margin-bottom: 10px; line-height: 1.5; }
   footer { font-size: 11px; color: var(--muted); margin: 20px 4px 0; line-height: 1.5; }
 
   /* 상세 화면 */
@@ -62,7 +63,7 @@
   .axis { fill: var(--muted); font-size: 10px; }
   .gridline { stroke: var(--line); stroke-width: 1; }
   .l-price { stroke: var(--fg); stroke-width: 1.8; fill: none; stroke-linejoin: round; }
-  .l-ma20 { stroke: var(--ma20); } .l-ma60 { stroke: var(--ma60); } .l-ma120 { stroke: var(--ma120); }
+  .l-ma0 { stroke: var(--ma0); } .l-ma1 { stroke: var(--ma1); } .l-ma2 { stroke: var(--ma2); }
   .l-ma { stroke-width: 1.4; fill: none; stroke-linejoin: round; }
   .cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
   .dot { fill: var(--fg); }
@@ -76,12 +77,16 @@
 <body>
 
 <div id="list-view">
-  <header><h1>지표 추적자</h1><span id="updated">불러오는 중…</span></header>
+  <header>
+    <h1>지표 추적자</h1>
+    <div class="tagline">여보 신기하지?</div>
+    <div class="stamp" id="updated">불러오는 중…</div>
+  </header>
   <div id="banner"></div>
   <main id="root"></main>
-  <footer>지표를 누르면 8개월 차트와 이동평균선을 볼 수 있습니다. 등락은 직전 관측일 대비이며 주가·환율·원유는 %,
+  <footer>지표를 누르면 차트와 이동평균선을 볼 수 있습니다. 등락은 직전 관측일 대비이며 주가·환율·원유는 %,
   금리는 bp입니다. 카드의 날짜는 해당 값의 기준일로, 시장별 휴장일이 달라 서로 다를 수 있습니다.
-  출처: Yahoo Finance, FRED, 한국은행 ECOS.</footer>
+  출처: Yahoo Finance, 미 재무부(FRED 보조), 한국은행 ECOS.</footer>
 </div>
 
 <div id="detail-view">
@@ -90,6 +95,7 @@
     <div class="d-title" id="d-title"></div>
     <div class="d-val" id="d-val"></div>
     <div class="chg" id="d-chg"></div>
+    <div class="stamp" id="d-updated"></div>
   </div>
   <div class="panel" id="readout"></div>
   <div class="panel"><div id="chart"></div></div>
@@ -100,8 +106,8 @@
 <script>
 (function () {
   var NS = 'http://www.w3.org/2000/svg';
-  var MONTHS = 8;            // 상세 차트 표시 기간(개월)
-  var MA_N = [20, 60, 120];  // 이동평균 기간(거래일)
+  var DEF_MA = [20, 60, 120], DEF_MONTHS = 8;
+  var STALE_HOURS = 3;       // 이 시간 넘게 수집이 없으면 경고
   var DATA = null, BY_ID = {}, listScroll = 0, current = null;
 
   /* ---------- 공통 ---------- */
@@ -124,6 +130,34 @@
   function signed(x, d) { return (x > 0 ? '+' : x < 0 ? '−' : '') + fmt(Math.abs(x), d); }
   function tms(dateStr) { var p = dateStr.split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]); }
   function md(dateStr) { var p = dateStr.split('-'); return (+p[1]) + '/' + (+p[2]); }
+  function cfg(s) { return { mas: (s.ma && s.ma.length) ? s.ma : DEF_MA, months: s.months || DEF_MONTHS }; }
+
+  /* ---------- 마지막 수집 시각 (한국 시간) ---------- */
+  function kst(d) {
+    var p = {};
+    new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d).forEach(function (x) { p[x.type] = x.value; });
+    var h = p.hour === '24' ? '00' : p.hour;
+    return p.year + '-' + p.month + '-' + p.day + ' ' + h + ':' + p.minute;
+  }
+  function ago(ms) {
+    var m = Math.floor(ms / 60000);
+    if (m < 1) return '방금 전';
+    if (m < 60) return m + '분 전';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + '시간 ' + (m % 60) + '분 전';
+    return Math.floor(h / 24) + '일 전';
+  }
+  function stampText() {
+    var gen = new Date(DATA.generated_at);
+    return '마지막 수집 ' + kst(gen) + ' (KST) · ' + ago(Date.now() - gen.getTime());
+  }
+  function updateStamp() {
+    if (!DATA) return;
+    var t = stampText();
+    document.getElementById('updated').textContent = t;
+    document.getElementById('d-updated').textContent = t;
+  }
 
   /* ---------- 목록 화면 ---------- */
   function spark(points, dir) {
@@ -166,7 +200,7 @@
     c.appendChild(el('div', 'chg ' + dir, changeText(s)));
     if (s.points && s.points.length > 1) c.appendChild(spark(s.points.slice(-60), dir));
     c.appendChild(el('div', 'meta' + (s.stale ? ' stale' : ''),
-                     s.as_of + (s.stale ? ' · 갱신 실패(이전 값)' : '')));
+                     s.as_of + (s.note ? ' · ' + s.note : '') + (s.stale ? ' · 갱신 실패(이전 값)' : '')));
     var open = function () { listScroll = window.scrollY || 0; location.hash = s.id; };
     c.addEventListener('click', open);
     c.addEventListener('keydown', function (e) { if (e.key === 'Enter') open(); });
@@ -186,16 +220,13 @@
       byGroup[g].forEach(function (s) { grid.appendChild(card(s)); });
       root.appendChild(grid);
     });
-    var gen = new Date(DATA.generated_at);
-    document.getElementById('updated').textContent =
-      '수집 ' + gen.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric',
-                                             hour: '2-digit', minute: '2-digit', hour12: false });
+    updateStamp();
     var problems = DATA.series.filter(function (s) { return s.error; }).map(function (s) {
       return s.label + '(' + String(s.error).slice(0, 70) + ')';
     });
-    var ageH = (Date.now() - gen.getTime()) / 36e5, msgs = [];
+    var ageH = (Date.now() - new Date(DATA.generated_at).getTime()) / 36e5, msgs = [];
     if (problems.length) msgs.push('수집 실패: ' + problems.join(', '));
-    if (ageH > 96) msgs.push('마지막 수집이 ' + Math.floor(ageH / 24) + '일 전입니다.');
+    if (ageH > STALE_HOURS) msgs.push('마지막 수집이 ' + ago(ageH * 36e5) + '입니다. 자동 수집이 멈췄는지 확인하세요.');
     var b = document.getElementById('banner');
     if (msgs.length) { b.textContent = msgs.join(' / '); b.style.display = 'block'; }
     else b.style.display = 'none';
@@ -217,16 +248,17 @@
     for (var v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) ticks.push(v);
     return { ticks: ticks, step: step };
   }
-  // 상세용 계산: 전체 이력으로 이동평균을 구하고, 표시 구간(최근 8개월)의 시작 인덱스를 찾는다.
-  function model(s) {
+  // 전체 이력으로 이동평균을 구하고, 표시 구간(최근 N개월)의 시작 인덱스를 찾는다.
+  function model(s, c) {
     var pts = s.points || [];
     var closes = pts.map(function (p) { return p[1]; });
-    var ma = MA_N.map(function (n) { return sma(closes, n); });
+    var ma = c.mas.map(function (n) { return sma(closes, n); });
     var endT = tms(pts[pts.length - 1][0]);
-    var d = new Date(endT); d.setUTCMonth(d.getUTCMonth() - MONTHS);
+    var d = new Date(endT); d.setUTCMonth(d.getUTCMonth() - c.months);
     var startIdx = 0;
     while (startIdx < pts.length - 1 && tms(pts[startIdx][0]) < d.getTime()) startIdx++;
-    return { pts: pts, closes: closes, ma: ma, start: startIdx, t0: tms(pts[startIdx][0]), t1: endT };
+    return { pts: pts, closes: closes, ma: ma, mas: c.mas, months: c.months,
+             start: startIdx, t0: tms(pts[startIdx][0]), t1: endT };
   }
 
   function drawChart(s, m, onPick) {
@@ -236,7 +268,7 @@
     var pw = W - L - R, ph = H - T - B;
     var svg = svgEl('svg', { width: W, height: H, viewBox: '0 0 ' + W + ' ' + H });
 
-    var lo = Infinity, hi = -Infinity, i, k, v;
+    var lo = Infinity, hi = -Infinity, i, k;
     for (i = m.start; i < m.pts.length; i++) {
       var cand = [m.closes[i]];
       for (k = 0; k < m.ma.length; k++) if (m.ma[k][i] != null) cand.push(m.ma[k][i]);
@@ -279,9 +311,9 @@
       }
       return d;
     }
-    [2, 1, 0].forEach(function (idx) {
+    m.ma.map(function (_, idx) { return idx; }).reverse().forEach(function (idx) {
       var d = pathOf(m.ma[idx]);
-      if (d) svg.appendChild(svgEl('path', { d: d, 'class': 'l-ma l-ma' + MA_N[idx] }));
+      if (d) svg.appendChild(svgEl('path', { d: d, 'class': 'l-ma l-ma' + idx }));
     });
     svg.appendChild(svgEl('path', { d: pathOf(m.closes), 'class': 'l-price' }));
 
@@ -311,13 +343,15 @@
     host.appendChild(svg);
   }
 
-  function buildReadout() {
+  function buildReadout(mas) {
     var box = document.getElementById('readout');
     box.replaceChildren();
+    box.style.gridTemplateColumns = 'repeat(' + (mas.length + 1) + ', 1fr)';
     var refs = { date: el('div', 'date') };
     box.appendChild(refs.date);
-    [['close', '종가', 'var(--fg)'], ['ma20', '20일', 'var(--ma20)'],
-     ['ma60', '60일', 'var(--ma60)'], ['ma120', '120일', 'var(--ma120)']].forEach(function (r) {
+    [['close', '종가', 'var(--fg)']].concat(mas.map(function (n, i) {
+      return ['ma' + i, n + '일', 'var(--ma' + i + ')'];
+    })).forEach(function (r) {
       var c = el('div', 'ro'), k = el('div', 'k'), sw = el('i');
       sw.style.background = r[2];
       k.appendChild(sw); k.appendChild(document.createTextNode(r[1]));
@@ -338,18 +372,18 @@
   function renderStats(s, m) {
     var box = document.getElementById('stats');
     box.replaceChildren();
-    var last = m.pts.length - 1, bp = s.kind === 'bp', dec = s.decimals;
-    var hiI = m.start, loI = m.start, i;
+    var last = m.pts.length - 1, bp = s.kind === 'bp', dec = s.decimals, i;
+    var hiI = m.start, loI = m.start;
     for (i = m.start; i <= last; i++) {
       if (m.closes[i] > m.closes[hiI]) hiI = i;
       if (m.closes[i] < m.closes[loI]) loI = i;
     }
     var first = m.closes[m.start], cur = m.closes[last];
     var u = s.unit === '%' ? '%' : '';
-    box.appendChild(stat(MONTHS + '개월 최고', fmt(m.closes[hiI], dec) + u + ' (' + md(m.pts[hiI][0]) + ')'));
-    box.appendChild(stat(MONTHS + '개월 최저', fmt(m.closes[loI], dec) + u + ' (' + md(m.pts[loI][0]) + ')'));
+    box.appendChild(stat(m.months + '개월 최고', fmt(m.closes[hiI], dec) + u + ' (' + md(m.pts[hiI][0]) + ')'));
+    box.appendChild(stat(m.months + '개월 최저', fmt(m.closes[loI], dec) + u + ' (' + md(m.pts[loI][0]) + ')'));
     var chg = bp ? (cur - first) * 100 : (cur / first - 1) * 100;
-    box.appendChild(stat(MONTHS + '개월 등락 (' + md(m.pts[m.start][0]) + '~)',
+    box.appendChild(stat(m.months + '개월 등락 (' + md(m.pts[m.start][0]) + '~)',
                          signed(chg, bp ? 1 : 2) + (bp ? 'bp' : '%'), dirOf(chg)));
     if (!bp) {
       var dd = (cur / m.closes[hiI] - 1) * 100;
@@ -357,9 +391,10 @@
     } else {
       box.appendChild(stat('고점 대비', signed((cur - m.closes[hiI]) * 100, 1) + 'bp', dirOf(cur - m.closes[hiI])));
     }
-    var parts = [], ok = true;
-    MA_N.forEach(function (n, idx) {
+    var parts = [], vals = [], ok = true;
+    m.mas.forEach(function (n, idx) {
       var mv = m.ma[idx][last];
+      vals.push(mv);
       if (mv == null) { ok = false; parts.push(n + '일선 —'); return; }
       var g = bp ? (cur - mv) * 100 : (cur / mv - 1) * 100;
       parts.push(n + '일선 ' + signed(g, bp ? 1 : 2) + (bp ? 'bp' : '%'));
@@ -367,13 +402,15 @@
     box.appendChild(stat('이동평균선 대비 현재가', parts.join(' · '), null, true));
     var arr = '—';
     if (ok) {
-      var a = m.ma[0][last], b = m.ma[1][last], c = m.ma[2][last];
-      arr = (a > b && b > c) ? '정배열 (20 > 60 > 120)' : (a < b && b < c) ? '역배열 (20 < 60 < 120)' : '혼조';
+      var desc = true, asc = true;
+      for (i = 0; i < vals.length - 1; i++) { if (!(vals[i] > vals[i + 1])) desc = false; if (!(vals[i] < vals[i + 1])) asc = false; }
+      arr = desc ? '정배열 (' + m.mas.join(' > ') + ')' : asc ? '역배열 (' + m.mas.join(' < ') + ')' : '혼조';
     }
     box.appendChild(stat('이동평균 배열', arr, null, true));
   }
 
   function renderDetail(s) {
+    var c = cfg(s);
     document.getElementById('d-title').textContent = s.label;
     var dv = document.getElementById('d-val');
     dv.textContent = s.last != null ? fmt(s.last, s.decimals) : '—';
@@ -381,6 +418,7 @@
     var dc = document.getElementById('d-chg');
     dc.className = 'chg ' + (s.change != null ? dirOf(s.change) : 'flat');
     dc.textContent = changeText(s) + (s.as_of ? '  ·  ' + s.as_of : '');
+    updateStamp();
     var note = document.getElementById('d-note');
     var chartHost = document.getElementById('chart'), stats = document.getElementById('stats');
     if (!s.points || s.points.length < 2) {
@@ -389,14 +427,14 @@
       note.textContent = '이 지표는 아직 차트를 그릴 데이터가 없습니다.' + (s.error ? ' (' + s.error + ')' : '');
       return;
     }
-    var m = model(s), refs = buildReadout();
+    var m = model(s, c), refs = buildReadout(c.mas);
     var u = s.unit === '%' ? '%' : '';
     function setReadout(i) {
       refs.date.textContent = m.pts[i][0];
       refs.close.textContent = fmt(m.closes[i], s.decimals) + u;
-      MA_N.forEach(function (n, idx) {
+      c.mas.forEach(function (n, idx) {
         var mv = m.ma[idx][i];
-        refs['ma' + n].textContent = mv == null ? '—' : fmt(mv, s.decimals) + u;
+        refs['ma' + idx].textContent = mv == null ? '—' : fmt(mv, s.decimals) + u;
       });
     }
     function draw() { drawChart(s, m, setReadout); setReadout(m.pts.length - 1); }
@@ -404,7 +442,8 @@
     draw();
     renderStats(s, m);
     var histDays = Math.round((m.t1 - tms(m.pts[0][0])) / 864e5);
-    note.textContent = '이동평균은 일별 종가의 단순이동평균(거래일 기준)이며 현재 보관 중인 약 ' + histDays +
+    note.textContent = (s.note ? s.note + '. ' : '') +
+      '이동평균은 일별 종가의 단순이동평균(거래일 기준)이며 현재 보관 중인 약 ' + histDays +
       '일 데이터로 계산합니다. 차트를 누르거나 좌우로 끌면 날짜별 값을 볼 수 있습니다. 출처: ' + s.source +
       (s.stale ? ' · 최근 갱신 실패로 이전 값 표시 중' : '') + '.';
   }
@@ -431,6 +470,7 @@
     clearTimeout(rt);
     rt = setTimeout(function () { if (current) current.draw(); }, 150);
   });
+  setInterval(updateStamp, 30000);
 
   fetch('data.json?t=' + Date.now(), { cache: 'no-store' })
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })

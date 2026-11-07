@@ -2,9 +2,10 @@
 """지표 수집 -> data.json (표준 라이브러리만 사용).
 
 출처
-- 코스피/코스닥/나스닥/S&P500/WTI/원달러: Yahoo Finance chart API (비공식, 키 불필요)
-- 미국채 2Y/10Y: FRED (DGS2, DGS10) fredgraph.csv (키 불필요)
-- 한국 국고채 3Y/10Y: 한국은행 ECOS (817Y002, 키 필요: 환경변수 ECOS_API_KEY)
+- 주가지수·원자재·환율·VIX·비트코인·EWY: Yahoo Finance chart API (비공식, 키 불필요)
+- 미국채 2/10/30년: 미 재무부 일별 금리 CSV (실패 시 FRED로 대체, 키 불필요)
+- 국고채 3년: 한국은행 ECOS (817Y002, 키 필요: 환경변수 ECOS_API_KEY)
+- EWY(원화환산): EWY(달러) x 원/달러 를 계산 (환율 영향 제거)
 
 시리즈별로 실패해도 나머지는 계속 진행하고, 실패한 시리즈는 이전 data.json 값을
 유지하되 stale=true 로 표시한다.
@@ -14,6 +15,7 @@ import io
 import json
 import os
 import sys
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -22,35 +24,66 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")
 KEEP_DAYS = 450  # 보관 기간(일): 8개월 표시 + 120일 이동평균 계산용
 UA = {"User-Agent": "Mozilla/5.0 (stock-dashboard)"}
 TIMEOUT = 30
+DEFAULT_MA = [20, 60, 120]
+DEFAULT_MONTHS = 8
 
-# kind: pct = 등락률(%), bp = 금리 변화(bp)
+# (id, 표시명, 그룹, 단위, 소수자리, kind, (출처, 코드), 추가설정)
+#  kind: pct = 등락률(%), bp = 금리 변화(bp)
+#  추가설정: ma(이동평균 기간 목록), months(상세 차트 표시 개월), note(카드 보조 문구)
 SERIES = [
-    # id, 표시명, 그룹, 단위, 소수자리, kind, 출처(type, 코드)
-    ("kospi", "코스피", "주가지수", "", 2, "pct", ("yahoo", "^KS11")),
-    ("kosdaq", "코스닥", "주가지수", "", 2, "pct", ("yahoo", "^KQ11")),
-    ("nasdaq", "나스닥 종합", "주가지수", "", 2, "pct", ("yahoo", "^IXIC")),
-    ("spx", "S&P 500", "주가지수", "", 2, "pct", ("yahoo", "^GSPC")),
-    ("us2y", "미국채 2년", "금리", "%", 3, "bp", ("ust", ("2 Yr", "DGS2"))),
-    ("us10y", "미국채 10년", "금리", "%", 3, "bp", ("ust", ("10 Yr", "DGS10"))),
-    ("us30y", "미국채 30년", "금리", "%", 3, "bp", ("ust", ("30 Yr", "DGS30"))),
-    ("kr3y", "국고채 3년", "금리", "%", 3, "bp", ("ecos", "국고채(3년)")),
-    ("kr10y", "국고채 10년", "금리", "%", 3, "bp", ("ecos", "국고채(10년)")),
-    ("wti", "WTI 원유", "원자재·환율", "$", 2, "pct", ("yahoo", "CL=F")),
-    ("usdkrw", "원/달러", "원자재·환율", "원", 2, "pct", ("yahoo", "KRW=X")),
+    ("kospi", "코스피", "주가지수", "", 2, "pct", ("yahoo", "^KS11"), {}),
+    ("kosdaq", "코스닥", "주가지수", "", 2, "pct", ("yahoo", "^KQ11"), {}),
+    ("ewy", "EWY (달러)", "주가지수", "$", 2, "pct", ("yahoo", "EWY"),
+     {"note": "미국 상장 한국 ETF"}),
+    ("ewy_krw", "EWY (원화환산)", "주가지수", "원", 0, "pct", ("calc", ("ewy", "usdkrw")),
+     {"note": "환율 영향 제거"}),
+    ("nikkei", "니케이 225", "주가지수", "", 2, "pct", ("yahoo", "^N225"), {}),
+    ("nasdaq", "나스닥 종합", "주가지수", "", 2, "pct", ("yahoo", "^IXIC"), {}),
+    ("spx", "S&P 500", "주가지수", "", 2, "pct", ("yahoo", "^GSPC"), {}),
+    ("us2y", "미국채 2년", "금리", "%", 3, "bp", ("ust", ("2 Yr", "DGS2")), {}),
+    ("us10y", "미국채 10년", "금리", "%", 3, "bp", ("ust", ("10 Yr", "DGS10")), {}),
+    ("us30y", "미국채 30년", "금리", "%", 3, "bp", ("ust", ("30 Yr", "DGS30")), {}),
+    ("kr3y", "국고채 3년", "금리", "%", 3, "bp", ("ecos", "국고채(3년)"), {}),
+    ("wti", "WTI 원유", "원자재·환율", "$", 2, "pct", ("yahoo", "CL=F"), {}),
+    ("gold", "금", "원자재·환율", "$", 1, "pct", ("yahoo", "GC=F"), {}),
+    ("usdkrw", "원/달러", "원자재·환율", "원", 2, "pct", ("yahoo", "KRW=X"),
+     {"note": "↑ 원화 약세"}),
+    ("usdjpy", "달러/엔", "원자재·환율", "엔", 2, "pct", ("yahoo", "JPY=X"),
+     {"note": "↑ 엔화 약세"}),
+    ("usdidr", "달러/루피아", "원자재·환율", "루피아", 0, "pct", ("yahoo", "IDR=X"),
+     {"note": "↑ 루피아 약세"}),
+    ("dxy", "달러 인덱스", "원자재·환율", "", 2, "pct", ("yahoo", "DX-Y.NYB"), {}),
+    ("vix", "VIX", "위험·심리", "", 2, "pct", ("yahoo", "^VIX"),
+     {"ma": [10, 20], "months": 3}),
+    ("btc", "비트코인", "위험·심리", "$", 0, "pct", ("yahoo", "BTC-USD"), {}),
 ]
 
 
 def http_get(url):
-    req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-        return r.read().decode("utf-8")
+    last = None
+    for attempt in range(2):  # 일시 오류 대비 1회 재시도
+        try:
+            req = urllib.request.Request(url, headers=UA)
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+                return r.read().decode("utf-8")
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            time.sleep(1)
+    raise last
 
 
 def fetch_yahoo(symbol):
-    url = ("https://query1.finance.yahoo.com/v8/finance/chart/"
-           + urllib.parse.quote(symbol, safe="")
-           + "?range=2y&interval=1d")
-    res = json.loads(http_get(url))["chart"]["result"][0]
+    path = ("/v8/finance/chart/" + urllib.parse.quote(symbol, safe="")
+            + "?range=2y&interval=1d")
+    last = None
+    for host in ("query1.finance.yahoo.com", "query2.finance.yahoo.com"):
+        try:
+            res = json.loads(http_get("https://" + host + path))["chart"]["result"][0]
+            break
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+    else:
+        raise last
     off = res["meta"].get("gmtoffset", 0)
     closes = res["indicators"]["quote"][0]["close"]
     pts = []
@@ -150,9 +183,24 @@ def fetch_ecos(item_name, _cache={}):
     return pts
 
 
+def calc_product(a, b):
+    """a의 각 날짜 값 x (그 날짜 이전 가장 최근 b 값). 예: EWY(달러) x 원/달러."""
+    out, j, last = [], 0, None
+    b = sorted(b)
+    for d, v in sorted(a):
+        while j < len(b) and b[j][0] <= d:
+            last = b[j][1]
+            j += 1
+        if last is not None:
+            out.append([d, v * last])
+    if not out:
+        raise RuntimeError("겹치는 날짜 없음")
+    return out
+
+
 FETCHERS = {"yahoo": fetch_yahoo, "fred": fetch_fred, "ecos": fetch_ecos, "ust": fetch_ust}
 SOURCE_LABEL = {"yahoo": "Yahoo Finance", "fred": "FRED", "ecos": "한국은행 ECOS",
-                "ust": "미 재무부(FRED 보조)"}
+                "ust": "미 재무부(FRED 보조)", "calc": "계산: EWY × 원/달러"}
 
 
 def summarize(pts, kind):
@@ -170,6 +218,16 @@ def summarize(pts, kind):
     return out
 
 
+def make_item(spec):
+    sid, label, group, unit, dec, kind, (stype, _code), extra = spec
+    item = {"id": sid, "label": label, "group": group, "unit": unit, "decimals": dec,
+            "kind": kind, "source": SOURCE_LABEL[stype],
+            "ma": extra.get("ma", DEFAULT_MA), "months": extra.get("months", DEFAULT_MONTHS)}
+    if "note" in extra:
+        item["note"] = extra["note"]
+    return item
+
+
 def main():
     try:
         with open(OUT, encoding="utf-8") as f:
@@ -177,14 +235,17 @@ def main():
     except (OSError, ValueError):
         old = {}
 
-    result, failures = [], 0
-    for sid, label, group, unit, dec, kind, (stype, code) in SERIES:
-        item = {"id": sid, "label": label, "group": group, "unit": unit,
-                "decimals": dec, "kind": kind, "source": SOURCE_LABEL[stype]}
+    raw, items, failures = {}, {}, 0
+
+    def apply(spec, getter):
+        nonlocal failures
+        sid, kind = spec[0], spec[5]
+        item = make_item(spec)
         try:
-            pts = FETCHERS[stype](code)
+            pts = getter()
             if not pts:
                 raise RuntimeError("데이터 없음")
+            raw[sid] = pts
             item.update(summarize(pts, kind))
         except Exception as exc:  # noqa: BLE001 - 시리즈 단위로 격리
             failures += 1
@@ -196,14 +257,30 @@ def main():
                               "change_pct") if k in prev})
                 item["stale"] = True
             item["error"] = str(exc)
-        result.append(item)
+        items[sid] = item
+
+    for spec in SERIES:  # 1차: 외부 수집
+        stype, code = spec[6]
+        if stype != "calc":
+            apply(spec, lambda f=FETCHERS[stype], c=code: f(c))
+
+    for spec in SERIES:  # 2차: 계산 지표 (수집 결과에 의존)
+        stype, code = spec[6]
+        if stype == "calc":
+            a, b = code
+
+            def getter(a=a, b=b):
+                if a not in raw or b not in raw:
+                    raise RuntimeError("입력 지표 수집 실패: %s, %s" % (a, b))
+                return calc_product(raw[a], raw[b])
+            apply(spec, getter)
 
     if failures == len(SERIES):
         print("[ERROR] 모든 시리즈 실패 - data.json 갱신 안 함", file=sys.stderr)
         return 1
 
     payload = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-               "series": result}
+               "series": [items[s[0]] for s in SERIES]}
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
     print("OK: %d/%d 시리즈 갱신" % (len(SERIES) - failures, len(SERIES)))
