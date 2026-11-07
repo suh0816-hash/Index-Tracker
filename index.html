@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>지표 추적자</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --fg: #14171c; --muted: #6b7280; --line: #e5e7eb;
+    --up: #d92d20;   /* 상승: 빨강 (한국식) */
+    --down: #1d6fe0; /* 하락: 파랑 */
+    --flat: #6b7280; --warn: #b45309;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1115; --card: #181b21; --fg: #eef0f3; --muted: #9aa1ad;
+            --line: #272b33; --up: #ff6b5e; --down: #5aa2ff; --flat: #9aa1ad; --warn: #f5a524; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+         padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+                  max(24px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+  header { display: flex; justify-content: space-between; align-items: baseline; margin: 4px 4px 12px; }
+  h1 { font-size: 18px; margin: 0; }
+  #updated { font-size: 12px; color: var(--muted); }
+  h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 18px 4px 8px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; min-width: 0; }
+  .name { font-size: 12px; color: var(--muted); }
+  .val { font-size: 21px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .val small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 2px; }
+  .chg { font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--flat); }
+  svg.spark { width: 100%; height: 36px; margin-top: 8px; display: block; }
+  .meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .stale { color: var(--warn); }
+  #banner { display: none; background: var(--card); border: 1px solid var(--warn); color: var(--warn);
+            border-radius: 12px; padding: 10px 12px; font-size: 13px; margin-bottom: 10px; }
+  footer { font-size: 11px; color: var(--muted); margin: 20px 4px 0; line-height: 1.5; }
+</style>
+</head>
+<body>
+<header><h1>지표 추적자</h1><span id="updated">불러오는 중…</span></header>
+<div id="banner"></div>
+<main id="root"></main>
+<footer>등락은 직전 관측일 대비. 주가·환율·원유는 %, 금리는 bp. 각 카드의 날짜는 해당 값의 기준일이며
+시장별 휴장일이 달라 서로 다를 수 있습니다. 출처: Yahoo Finance, FRED, 한국은행 ECOS.</footer>
+
+<script>
+(function () {
+  var root = document.getElementById('root');
+  var NS = 'http://www.w3.org/2000/svg';
+
+  function fmt(n, d) {
+    return Number(n).toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d });
+  }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function spark(points, dir) {
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'spark');
+    svg.setAttribute('viewBox', '0 0 100 36');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    var vals = points.map(function (p) { return p[1]; });
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    var span = hi - lo || 1;
+    var d = vals.map(function (v, i) {
+      var x = vals.length === 1 ? 50 : (i / (vals.length - 1)) * 100;
+      var y = 34 - ((v - lo) / span) * 32;
+      return (i ? 'L' : 'M') + x.toFixed(2) + ' ' + y.toFixed(2);
+    }).join(' ');
+    var path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', 'currentColor');
+    path.setAttribute('stroke-width', '1.6');
+    path.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.appendChild(path);
+    svg.setAttribute('class', 'spark ' + dir);
+    return svg;
+  }
+  function card(s) {
+    var c = el('div', 'card');
+    c.appendChild(el('div', 'name', s.label));
+    if (s.last == null) {
+      c.appendChild(el('div', 'val', '—'));
+      c.appendChild(el('div', 'meta stale', '데이터 없음'));
+      return c;
+    }
+    var v = el('div', 'val', fmt(s.last, s.decimals));
+    if (s.unit) v.appendChild(el('small', null, s.unit));
+    c.appendChild(v);
+
+    var dir = 'flat', txt = '—';
+    if (s.change != null) {
+      dir = s.change > 0 ? 'up' : s.change < 0 ? 'down' : 'flat';
+      var arrow = s.change > 0 ? '▲' : s.change < 0 ? '▼' : '–';
+      if (s.kind === 'bp') {
+        txt = arrow + ' ' + fmt(Math.abs(s.change), 1) + 'bp';
+      } else {
+        txt = arrow + ' ' + fmt(Math.abs(s.change), s.decimals) +
+              (s.change_pct != null ? ' (' + fmt(Math.abs(s.change_pct), 2) + '%)' : '');
+      }
+    }
+    c.appendChild(el('div', 'chg ' + dir, txt));
+    if (s.points && s.points.length > 1) c.appendChild(spark(s.points.slice(-60), dir));
+    var m = el('div', 'meta' + (s.stale ? ' stale' : ''), s.as_of + (s.stale ? ' · 갱신 실패(이전 값)' : ''));
+    c.appendChild(m);
+    return c;
+  }
+
+  fetch('data.json?t=' + Date.now(), { cache: 'no-store' })
+    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function (data) {
+      var groups = [], byGroup = {};
+      data.series.forEach(function (s) {
+        if (!byGroup[s.group]) { byGroup[s.group] = []; groups.push(s.group); }
+        byGroup[s.group].push(s);
+      });
+      groups.forEach(function (g) {
+        root.appendChild(el('h2', null, g));
+        var grid = el('div', 'grid');
+        byGroup[g].forEach(function (s) { grid.appendChild(card(s)); });
+        root.appendChild(grid);
+      });
+      var gen = new Date(data.generated_at);
+      document.getElementById('updated').textContent =
+        '수집 ' + gen.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric',
+                                               hour: '2-digit', minute: '2-digit', hour12: false });
+      var problems = data.series.filter(function (s) { return s.error; }).map(function (s) { return s.label; });
+      var ageH = (Date.now() - gen.getTime()) / 36e5;
+      var msgs = [];
+      if (problems.length) msgs.push('수집 실패: ' + problems.join(', '));
+      if (ageH > 96) msgs.push('마지막 수집이 ' + Math.floor(ageH / 24) + '일 전입니다.');
+      if (msgs.length) {
+        var b = document.getElementById('banner');
+        b.textContent = msgs.join(' / ');
+        b.style.display = 'block';
+      }
+    })
+    .catch(function () {
+      document.getElementById('updated').textContent = '불러오기 실패';
+      var b = document.getElementById('banner');
+      b.textContent = 'data.json 을 읽지 못했습니다. 워크플로가 한 번 이상 실행되었는지 확인하세요.';
+      b.style.display = 'block';
+    });
+})();
+</script>
+</body>
+</html>
